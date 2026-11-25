@@ -17,11 +17,16 @@ const PAD = 3;
 const ALPHA_MIN = 110;
 
 const BUILDINGS = ['campfire', 'barricade', 'scrap_turret', 'turret', 'command_center', 'supply_depot', 'barracks'];
+/** 선택 정보 칸 그림용 자원 (11/25 사용자 요청: 고른 것을 그림으로) */
+const NODES = ['mineral_0', 'berry_full', 'debris_0', 'meat'];
 /** 유닛 시트: [이름, 한 장 크기, 한 줄의 장 수] */
 const SHEETS = [
   ['worker', 96, 5],
   ['rifleman', 96, 5],
   ['commander', 96, 5],
+  ['swarm', 96, 5],
+  ['charger', 96, 5],
+  ['grazer', 96, 1],
 ];
 
 function crop(src, x0, y0, w, h) {
@@ -100,7 +105,7 @@ function fitIcon(img) {
 }
 
 mkdirSync(outDir, { recursive: true });
-for (const name of BUILDINGS) {
+for (const name of [...BUILDINGS, ...NODES]) {
   writePng(join(outDir, `${name}.png`), fitIcon(readPng(join(spritesDir, `${name}.png`))));
   process.stdout.write(`아이콘: ${name}\n`);
 }

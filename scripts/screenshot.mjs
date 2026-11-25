@@ -251,6 +251,41 @@ await page.mouse.move(640, 300);
 await page.waitForTimeout(200);
 await shot('13-units.png');
 
+// 11/25: 집결 지점 깃발 + 명령 자리 표시 / 여럿 고르기 그림 칸 / 내 건물 강제 공격
+await page.evaluate(() => window.__rtsGame.scene.getScene('game').cameras.main.centerOn(16 * 48, 25 * 48));
+await page.waitForTimeout(100);
+await click(11, 21); // 사령부
+await click(16, 25, 'right');
+await page.waitForTimeout(120);
+await shot('13b-rally-ping.png');
+if ((await world('w.buildings.find((b) => b.kind === "commandCenter").rally?.kind')) !== 'point') errors.push('사령부 집결 지점이 안 정해짐');
+// 내 유닛 전부를 상자로
+const box = await page.evaluate(() => {
+  const s = window.__rtsGame.scene.getScene('game');
+  const cam = s.cameras.main;
+  const xs = s.world.units.map((u) => u.x * 48 + 24 - cam.scrollX);
+  const ys = s.world.units.map((u) => u.y * 48 + 24 - cam.scrollY);
+  return { x0: Math.min(...xs) - 30, y0: Math.min(...ys) - 50, x1: Math.max(...xs) + 30, y1: Math.max(...ys) + 20 };
+});
+await page.mouse.move(box.x0, box.y0);
+await page.mouse.down();
+await page.mouse.move(box.x1, box.y1, { steps: 8 });
+await page.mouse.up();
+await page.mouse.move(640, 300);
+await page.waitForTimeout(150);
+await shot('13c-multi.png');
+// 소총병만 남기고(그림 칸 누르기 대신 고르기) A → 간이벽(17,30) 강제 공격
+const rifle = await page.evaluate(() => window.__rtsGame.scene.getScene('game').world.units.find((u) => u.kind === 'rifleman').id);
+await page.evaluate((id) => window.__rtsGame.scene.getScene('game').unitInput.selectOnly(id), rifle);
+await page.evaluate(() => window.__rtsGame.scene.getScene('game').cameras.main.centerOn(16 * 48, 27 * 48)); // 벽(30번째 줄)이 아래 판에 안 가리게
+await page.waitForTimeout(100);
+await page.keyboard.press('KeyA');
+const wallAt = await tileToScreen(17, 30);
+await page.mouse.click(wallAt.x, wallAt.y);
+await waitForWorld("world.buildings.some((b) => b.kind === 'barricade' && b.hp < b.maxHp)", 60000);
+await page.mouse.move(640, 300);
+await shot('13d-force-attack.png');
+
 // 튜토리얼 완료 창 → [1스테이지 시작] → 같은 지도를 정상 규칙으로 새로 시작
 await page.evaluate(() => window.__rtsGame.scene.getScene('game').stageDialog.show());
 await page.mouse.move(547, 387);

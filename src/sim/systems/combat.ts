@@ -89,7 +89,31 @@ function engage(world: World, unit: Unit, target: Creature): boolean {
 /** 공격 명령: 정한 상대가 죽거나 사라지면 선다 */
 export function stepAttackOrder(world: World, unit: Unit, targetId: number): void {
   const target = findCreature(world, targetId);
-  if (!target || target.hp <= 0 || !engage(world, unit, target)) goIdle(unit);
+  if (target) {
+    if (target.hp <= 0 || !engage(world, unit, target)) goIdle(unit);
+    return;
+  }
+  // 강제 공격: 내 건물 (스타처럼 A 다음 내 건물을 누르면 부순다. 길을 트거나 자리를 비울 때)
+  const building = world.buildings.find((b) => b.id === targetId);
+  if (!building || building.hp <= 0 || !engageBuilding(world, unit, building)) goIdle(unit);
+}
+
+/** 건물 곁(사거리 안)으로 가서 친다. 갈 길이 없으면 false */
+function engageBuilding(world: World, unit: Unit, b: Building): boolean {
+  const spec = UNIT_ATTACK[unit.kind];
+  if (withinRange(spec, distanceToBuilding(b, unit.x, unit.y))) {
+    if (unit.path.length > 1) unit.path = unit.path.slice(0, 1);
+    if (unit.cooldown <= 0) {
+      strike(world, unit, b, spec, true);
+      unit.cooldown = spec.cooldown;
+    }
+    return true;
+  }
+  if (unit.path.length > 0) return true;
+  const path = pathToward(world, unitTile(unit), { x: b.x, y: b.y });
+  if (path === null || path.length === 0) return false;
+  unit.path = path;
+  return true;
 }
 
 /** 스스로 붙은 싸움: 상대가 사라졌거나 너무 멀어지면 놓아 준다. 계속 싸우면 true */

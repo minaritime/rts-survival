@@ -8,12 +8,12 @@ describe('선택 정보 글', () => {
     expect(describeSelection(newWorld(), new Set())).toBeNull();
   });
 
-  test('지휘관 하나: 이름 + 하는 일 + 체력', () => {
+  test('지휘관 하나: 이름 + 하는 일 (체력은 막대로 따로)', () => {
     const world = newWorld();
     const text = describeSelection(world, new Set([world.commanderId]));
     expect(text?.title).toBe('지휘관');
     expect(text?.status).toContain('대기 중');
-    expect(text?.status).toContain('체력 200 / 200');
+    expect(text?.status).not.toContain('체력');
   });
 
   test('하는 일: 채집하러 가는 중 → 캐는 중', () => {
@@ -41,7 +41,7 @@ describe('선택 정보 글', () => {
     commandTrain(world, cc.id, 'worker');
     commandTrain(world, cc.id, 'worker');
     run(world, 6);
-    expect(describeSelection(world, new Set([cc.id]))?.status).toMatch(/^일꾼 만드는 중 \d+%\n/);
+    expect(describeSelection(world, new Set([cc.id]))?.status).toMatch(/^일꾼 만드는 중 \d+%$/);
   });
 
   test('여럿이면 개수만', () => {
@@ -91,12 +91,12 @@ describe('선택 정보 글', () => {
 });
 
 describe('괴물·사냥감 설명 (5단계)', () => {
-  test('사냥감은 골라서 이름·체력을 본다', () => {
+  test('사냥감은 골라서 이름·설명을 본다', () => {
     const world = newWorld();
     const grazer = world.creatures.find((c) => c.kind === 'grazer')!;
     const text = describeSelection(world, new Set([grazer.id]));
     expect(text?.title).toBe('사냥감');
-    expect(text?.status).toContain('체력 30 / 30');
+    expect(text?.status).toContain('초식 동물');
   });
 
   test('괴물이 4칸 안에 있으면 배급처는 막힘', () => {

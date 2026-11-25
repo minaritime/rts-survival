@@ -71,7 +71,10 @@ const ATTACK: CommandButton = {
   col: 0,
   symbol: 'attack',
   enabled: true,
-  tooltip: { title: '공격 (A)', status: '괴물을 누르면 그 괴물을 공격합니다\n땅을 누르면 가는 길에 만나는 괴물과 싸우며 이동합니다' },
+  tooltip: {
+    title: '공격 (A)',
+    status: '괴물을 누르면 그 괴물을 공격합니다\n땅을 누르면 가는 길에 만나는 괴물과 싸우며 이동합니다\n내 건물을 누르면 그 건물을 부숩니다',
+  },
   run: (ctx) => ctx.startAttack(),
 };
 

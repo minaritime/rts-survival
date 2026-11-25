@@ -4,7 +4,7 @@ import { isStarving } from '../../sim/systems/hunger.ts';
 import type { Point } from '../../sim/grid.ts';
 import { commanderOf, type World } from '../../sim/world.ts';
 import type { ControlGroups } from '../controlGroups.ts';
-import { describeGroups, describeSelection, describeTile, type SelectionText } from './describe.ts';
+import { describeGroups, type SelectionText } from './describe.ts';
 import type { HudLayout } from './layout.ts';
 import { ALPHA, COLOR, FONT, SPACE, textStyle } from './tokens.ts';
 import { drawBar, drawPanel, hotkeyBadge, makeFixer } from './widgets.ts';
@@ -27,7 +27,7 @@ export interface BottomPanel {
 }
 
 /**
- * 아래 판: 바탕 + 지휘관 카드(늘 보임, 얼굴 + 체력·배부름 막대) + 선택 정보.
+ * 아래 판: 바탕 + 지휘관 카드(늘 보임, 얼굴 + 체력·배부름 막대) + 부대 번호. 선택 정보는 selectionCard.ts.
  * 미니맵은 minimap.ts, 명령 버튼은 commandCard.ts 가 그린다.
  */
 export function createBottomPanel(scene: Phaser.Scene, minimapCamera: Phaser.Cameras.Scene2D.Camera): BottomPanel {
@@ -45,9 +45,6 @@ export function createBottomPanel(scene: Phaser.Scene, minimapCamera: Phaser.Cam
   const satLabel = fix(scene.add.text(0, 0, '배부름', textStyle(FONT.body, COLOR.textSecondary)));
   const satValue = fix(scene.add.text(0, 0, '', textStyle(FONT.body)).setOrigin(1, 0));
 
-  const selTitle = fix(scene.add.text(0, 0, '', { ...textStyle(FONT.title), fontStyle: 'bold' }));
-  const selStatus = fix(scene.add.text(0, 0, '', textStyle(FONT.body, COLOR.textSecondary)));
-  const selEmpty = fix(scene.add.text(0, 0, '선택한 것 없음', textStyle(FONT.body, COLOR.textSecondary)).setOrigin(0.5));
   const groupLine = fix(scene.add.text(0, 0, '', textStyle(FONT.body, COLOR.questText)).setOrigin(0, 1));
 
   const barRects = { hp: { x: 0, y: 0, width: 0, height: 12 }, sat: { x: 0, y: 0, width: 0, height: 12 } };
@@ -72,12 +69,9 @@ export function createBottomPanel(scene: Phaser.Scene, minimapCamera: Phaser.Cam
         drawBar(bars, barRects.sat, world.satiety / COMMANDER.maxSatiety, starving ? COLOR.dangerNum : COLOR.satiety);
       }
 
-      // 고른 것이 없으면 살펴보는 칸(배급처·사냥감·절벽 등) 설명
-      // 버튼에 커서를 올렸으면 그 설명, 아니면 고른 것, 그것도 없으면 살펴보는 칸
-      const text = tip ?? describeSelection(world, selected) ?? (inspected ? describeTile(world, inspected) : null);
-      selEmpty.setVisible(selectionShown && text === null);
-      selTitle.setVisible(selectionShown && text !== null).setText(text?.title ?? '');
-      selStatus.setVisible(selectionShown && text !== null).setText(text?.status ?? '');
+      void selected;
+      void inspected;
+      void tip;
       groupLine.setVisible(selectionShown).setText(describeGroups(groups));
     },
     layout(layout) {
@@ -118,9 +112,6 @@ export function createBottomPanel(scene: Phaser.Scene, minimapCamera: Phaser.Cam
       const sel = layout.selection;
       selectionShown = sel.width > 0;
       if (selectionShown) drawPanel(bg, sel);
-      selTitle.setPosition(sel.x + SPACE.lg, sel.y + SPACE.lg);
-      selStatus.setPosition(sel.x + SPACE.lg, sel.y + SPACE.lg + 34).setLineSpacing(6);
-      selEmpty.setPosition(sel.x + sel.width / 2, sel.y + sel.height / 2);
       groupLine.setPosition(sel.x + SPACE.lg, sel.y + sel.height - SPACE.md);
     },
   };

@@ -7,6 +7,7 @@ import type { ScreenPoint } from '../coords.ts';
 import { createBottomPanel } from './bottomPanel.ts';
 import { createCommandCard } from './commandCard.ts';
 import { createQueueRow } from './queueRow.ts';
+import { createSelectionCard } from './selectionCard.ts';
 import { computeLayout, contains, isOnHud, type HudLayout } from './layout.ts';
 import { COLOR, FONT, textStyle } from './tokens.ts';
 import { createTopBar } from './topBar.ts';
@@ -30,6 +31,8 @@ export interface HudCallbacks {
   readonly getGroups: () => ControlGroups;
   /** 살펴보는 칸 (배급처·사냥감·절벽 등) */
   readonly getInspected: () => Point | null;
+  /** 여럿 고른 그림 칸 중 하나를 눌렀을 때: 그것만 고른다 */
+  readonly selectOnly: (id: number) => void;
 }
 
 export interface Hud {
@@ -51,6 +54,7 @@ export function createHud(scene: Phaser.Scene, minimapCamera: Phaser.Cameras.Sce
   const getContext = () => ({ ...cb.getState(), startPlacement: cb.startPlacement, startAttack: cb.startAttack, cancelAttack: cb.cancelAttack });
   const commands = createCommandCard(scene, minimapCamera, cb.isActive, getContext);
   const queue = createQueueRow(scene, minimapCamera);
+  const card = createSelectionCard(scene, minimapCamera);
   const banner = fix(
     scene.add.text(0, 0, '패배', { ...textStyle(FONT.large * 2.5, COLOR.danger), fontStyle: 'bold' }).setOrigin(0.5).setVisible(false),
   );
@@ -63,7 +67,9 @@ export function createHud(scene: Phaser.Scene, minimapCamera: Phaser.Cameras.Sce
     else if (contains(layout.heroCard, at)) cb.onHeroCard();
     else {
       const { world, selected } = cb.getState();
-      if (!queue.click(world, selected, at)) commands.click(getContext(), at);
+      const only = card.pick(world, selected, at);
+      if (only !== null) cb.selectOnly(only);
+      else if (!queue.click(world, selected, at)) commands.click(getContext(), at);
     }
   });
   scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F10).on('down', (_k: unknown, e: KeyboardEvent) => {
@@ -81,6 +87,7 @@ export function createHud(scene: Phaser.Scene, minimapCamera: Phaser.Cameras.Sce
       bottom.update(world, selected, cb.getGroups(), cb.getInspected(), null);
       commands.update(world, selected, cursor);
       queue.update(world, selected, cursor, cb.isActive());
+      card.update(world, selected, cb.getInspected(), cursor, cb.isActive());
       banner.setVisible(world.outcome === 'defeat');
     },
     resize(width, height) {
@@ -89,6 +96,7 @@ export function createHud(scene: Phaser.Scene, minimapCamera: Phaser.Cameras.Sce
       bottom.layout(layout);
       commands.layout(layout);
       queue.layout(layout);
+      card.layout(layout);
       banner.setPosition(width / 2, (height - layout.bottomPanel.height) / 2);
     },
     blocks(p) {

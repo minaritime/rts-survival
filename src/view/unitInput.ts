@@ -5,6 +5,7 @@ import type { Point } from '../sim/grid.ts';
 import { buildingAt, commanderOf, nodeAt, type World } from '../sim/world.ts';
 import { unitScreenPos, type ScreenPoint } from './coords.ts';
 import { DEPTH, PALETTE } from './palette.ts';
+import type { PingKind } from './commandPings.ts';
 import {
   addToGroup,
   assignGroup,
@@ -33,6 +34,8 @@ export interface UnitInput {
   readonly targeting: boolean;
   startAttackTarget(): void;
   cancelTargeting(): void;
+  /** 이것 하나만 고른다 (선택 정보의 그림 칸을 눌렀을 때) */
+  selectOnly(id: number): void;
   /** 매 프레임: 끄는 중이면 선택 상자를, 공격 대상 고르는 중이면 조준 표시를 그린다 */
   update(): void;
 }
@@ -49,6 +52,8 @@ export interface UnitInputDeps {
   /** 건물 자리를 고르는 중이면 지도 클릭을 placement.ts 에 양보한다 */
   readonly isPlacing: () => boolean;
   readonly minimapCamera: Phaser.Cameras.Scene2D.Camera;
+  /** 명령을 내린 자리 표시 (지도 픽셀 좌표) */
+  readonly onPing: (x: number, y: number, kind: PingKind) => void;
 }
 
 interface Drag {
@@ -101,13 +106,30 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
     if (targeting) {
       targeting = false;
       if (!pointer.leftButtonDown()) return; // 오른쪽 클릭 = 취소
+      // 괴물이면 공격, 내 건물이면 강제 공격, 땅이면 공격하며 이동
+      const t = tileOf(at);
+      const own = foe ? undefined : buildingAt(world, t.x, t.y);
       if (foe) commandAttack(world, myUnits(), foe.id);
-      else commandAttackMove(world, myUnits(), tileOf(at));
+      else if (own) commandAttack(world, myUnits(), own.id);
+      else commandAttackMove(world, myUnits(), t);
+      pingAt(foe ? unitScreenPos(foe, deps.getAlpha()) : at, 'attack');
       return;
     }
     if (pointer.rightButtonDown()) {
-      if (foe && myUnits().length > 0) commandAttack(world, [...selected], foe.id);
-      else commandSmart(world, [...selected], tileOf(at));
+      const t = tileOf(at);
+      const hasUnits = myUnits().length > 0;
+      const hasProducer = world.buildings.some((b) => selected.has(b.id) && b.complete);
+      if (foe && hasUnits) {
+        commandAttack(world, [...selected], foe.id);
+        pingAt(unitScreenPos(foe, deps.getAlpha()), 'attack');
+        return;
+      }
+      commandSmart(world, [...selected], t);
+      if (!hasUnits && !hasProducer) return;
+      // 자원·건물을 찍었으면 노랑(그 칸 한가운데), 땅이면 초록(누른 자리)
+      const thing = nodeAt(world, t.x, t.y) ?? buildingAt(world, t.x, t.y);
+      if (thing) pingAt({ x: (t.x + 0.5) * TILE_SIZE, y: (t.y + 0.5) * TILE_SIZE }, 'target');
+      else pingAt(at, 'move');
       return;
     }
     if (!pointer.leftButtonDown()) return;
@@ -170,6 +192,10 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
   };
   window.addEventListener('keydown', onKeyDown, { capture: true });
   scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => window.removeEventListener('keydown', onKeyDown, { capture: true }));
+
+  function pingAt(p: WorldPoint, kind: PingKind): void {
+    deps.onPing(p.x, p.y, kind);
+  }
 
   function tileOf(at: WorldPoint): Point {
     return { x: Math.floor(at.x / TILE_SIZE), y: Math.floor(at.y / TILE_SIZE) };
@@ -242,6 +268,11 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
       if (myUnits().length > 0) targeting = true;
     },
     cancelTargeting() {
+      targeting = false;
+    },
+    selectOnly(id) {
+      selected = new Set([id]);
+      inspected = null;
       targeting = false;
     },
     selectCommander,

@@ -28,6 +28,13 @@ const ICON_FILES: Readonly<Record<string, string>> = {
   worker: 'worker',
   rifleman: 'rifleman',
   commander: 'commander',
+  swarm: 'swarm',
+  charger: 'charger',
+  grazer: 'grazer',
+  mineral: 'mineral_0',
+  berry: 'berry_full',
+  debris: 'debris_0',
+  meat: 'meat',
 };
 
 export function iconKey(kind: string): string {

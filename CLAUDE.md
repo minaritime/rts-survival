@@ -150,6 +150,12 @@ node scripts/screenshot.mjs [주소] [폴더]   # 개발 서버를 띄운 뒤 �
 - 성능: `path.ts` 의 문자열 키(`"x,y"`)를 숫자 키(y*width+x)로, `world.nodes.find`·`findUnit` 선형 탐색을 id Map 으로. 같은 목표로 보낸 유닛들은 경로 공유. 갈 수 없는 곳을 찍으면 유닛마다 영역 전체를 뒤지는 것도 막기
 - 같은 칸으로 보낸 유닛들이 한 점에 겹침 → 유닛끼리 밀어내기 또는 도착 칸 나눠 주기
 
+## 5단계 뒤 사용자 요청 (2026-11-25)
+- **내 건물 강제 공격**: A 다음 내 건물 클릭 (스타식). `Order.attack.targetId` 가 건물 id 일 수 있음(`combat.engageBuilding`). 오른쪽 클릭으로는 안 부숨
+- **체력은 글자 대신 그림**: 선택 정보 칸(`ui/selectionCard.ts`, 순수 계산 `ui/selectionModel.ts`). 하나 = 그림 + 색 막대(초록 60% 넘음, 노랑 30% 넘음, 빨강) + 숫자. 여럿 = 그림 칸(칸마다 작은 막대), 칸 클릭 = 그것만 고름. `describe.ts` 글에는 체력 줄 없음. 괴물·자원 아이콘도 `make-icons.mjs` 가 만든다
+- **땅 표시** (`view/commandPings.ts`): 우클릭 = 초록(이동)/노랑(자원·건물)/빨강(괴물), A 다음 클릭 = 빨강. 생산 건물을 고르면 집결 지점까지 점선 + 깃발(자원이면 노란 고리) (`overlayDraw.drawRally`)
+- **다음 공격까지 늘 표시** (`waveBanner.ts`): "N번째 공격까지 1:25" + 막대. 30초 전 노랑 경고, 공격 중 빨강. 15분 끝까지 남은 공격 수는 6단계에서 끝나는 시각이 생기면 같이 검토
+
 ## GitHub 배포 (2026-11-25, 5단계 뒤 사용자 요청으로 앞당김)
 - 저장소 **minaritime/rts-survival (공개)**, 주소 **https://minaritime.github.io/rts-survival/**
 - **main 에 push 하면 자동 배포** (`.github/workflows/pages.yml`: `npm run check` 통과해야 올라감)

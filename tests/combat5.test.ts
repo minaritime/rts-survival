@@ -343,3 +343,20 @@ describe('리뷰 반영 (11/25)', () => {
     expect(c.engageId).toBeNull();
   });
 });
+
+describe('강제 공격 (11/25 사용자 요청)', () => {
+  test('A 다음 내 건물: 다가가서 부순다. 오른쪽 클릭으로는 부수지 않는다', () => {
+    const world = newWorld();
+    const wall = quickBuild(world, 'barricade', { x: 20, y: 24 });
+    const r = createTrainedUnit(world.nextId++, 'rifleman', { x: 14, y: 24 });
+    world.units.push(r);
+    commandSmart(world, [r.id], { x: 20, y: 24 });
+    run(world, 3);
+    expect(wall.hp).toBe(wall.maxHp);
+    expect(commandAttack(world, [r.id], wall.id)).toBe(true);
+    runUntil(world, () => !world.buildings.includes(wall), 60);
+    expect(world.stats.buildingsLost).toBe(1);
+    run(world, 0.1);
+    expect(r.order.type).toBe('idle');
+  });
+});

@@ -19,7 +19,10 @@ export function describeOrder(world: World, unit: Unit): string {
   const order = unit.order;
   if (order.type === 'idle') return unit.engageId !== null ? '싸우는 중' : '대기 중';
   if (order.type === 'move') return '이동 중';
-  if (order.type === 'attack') return '공격 중';
+  if (order.type === 'attack') {
+    const b = world.buildings.find((x) => x.id === order.targetId);
+    return b ? `${BUILDINGS[b.kind].name} 부수는 중` : '공격 중';
+  }
   if (order.type === 'attackMove') return unit.engageId !== null ? '싸우는 중' : '공격하며 이동 중';
   const going = unit.path.length > 0;
   if (order.type === 'repair') {
@@ -151,14 +154,14 @@ export function describeSelection(world: World, selected: ReadonlySet<number>): 
 
   const unit = units[0];
   if (unit) {
-    return { title: unitName(unit.kind), status: `${describeOrder(world, unit)}\n체력 ${Math.ceil(unit.hp)} / ${unit.maxHp}` };
+    return { title: unitName(unit.kind), status: describeOrder(world, unit) };
   }
   const b = buildings[0]!;
   const name = BUILDINGS[b.kind].name;
   const state = b.complete
     ? (describeProduction(world, b) ?? buildingRole(b.kind))
     : `짓는 중 ${Math.floor(b.progress * 100)}%`;
-  return { title: name, status: `${state}\n체력 ${Math.ceil(b.hp)} / ${b.maxHp}` };
+  return { title: name, status: state };
 }
 
 /** 지정한 부대 번호 줄. 예: "부대  1(1)  3(2)". 없으면 빈 글 */
@@ -168,9 +171,9 @@ export function describeGroups(groups: ControlGroups): string {
   return parts.length === 0 ? '' : `부대  ${parts.join('  ')}`;
 }
 
-/** 괴물·사냥감 설명 */
+/** 괴물·사냥감 설명 (체력은 막대로 따로 그린다) */
 export function describeCreature(c: Creature): SelectionText {
   const spec = CREATURES[c.kind];
   const attack = spec.attack ? `\n공격 ${spec.attack.damage}` + (spec.attack.buildingFactor ? `, 건물에 ${spec.attack.buildingFactor}배` : '') : '';
-  return { title: spec.name, status: `${spec.role}\n체력 ${Math.ceil(c.hp)} / ${c.maxHp}${attack}` };
+  return { title: spec.name, status: `${spec.role}${attack}` };
 }

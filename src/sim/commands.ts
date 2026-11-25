@@ -303,10 +303,10 @@ function reorder(unit: Unit, order: Unit['order']): void {
   unit.engageId = null;
 }
 
-/** 공격: 괴물·사냥감 하나를 쫓아가 친다 */
+/** 공격: 괴물·사냥감 하나를 쫓아가 친다. 내 건물이면 강제 공격 (A 다음 건물 클릭) */
 export function commandAttack(world: World, unitIds: readonly number[], targetId: number): boolean {
   if (world.outcome !== 'playing') return false;
-  const target = findCreature(world, targetId);
+  const target = findCreature(world, targetId) ?? world.buildings.find((b) => b.id === targetId);
   if (!target || target.hp <= 0) return false;
   const units = liveUnits(world, unitIds);
   for (const u of units) reorder(u, { type: 'attack', targetId });

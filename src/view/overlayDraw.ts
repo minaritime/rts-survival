@@ -86,6 +86,50 @@ function drawBuilding(top: Phaser.GameObjects.Graphics, b: Building, selected: b
   top.strokeRect(x, y, w, 8);
 }
 
+/** 고른 생산 건물의 집결 지점: 건물 한가운데에서 선, 땅이면 깃발, 자원이면 노란 고리 */
+function drawRally(ground: Phaser.GameObjects.Graphics, top: Phaser.GameObjects.Graphics, world: World, b: Building): void {
+  const rally = b.rally;
+  if (!rally || !b.complete) return;
+  const T = TILE_SIZE;
+  let tx: number;
+  let ty: number;
+  if (rally.kind === 'node') {
+    const node = world.nodes.find((n) => n.id === rally.nodeId);
+    if (!node) return;
+    tx = tileToPx(node.x);
+    ty = tileToPx(node.y);
+  } else {
+    tx = tileToPx(rally.x);
+    ty = tileToPx(rally.y);
+  }
+  const cx = (b.x + b.width / 2) * T;
+  const cy = (b.y + b.height / 2) * T;
+  const color = rally.kind === 'node' ? 0xfadb14 : 0x52c41a;
+  // 점선
+  const len = Math.hypot(tx - cx, ty - cy);
+  const steps = Math.floor(len / 14);
+  ground.lineStyle(2, color, 0.75);
+  for (let i = 0; i < steps; i += 2) {
+    const a = i / steps;
+    const z = Math.min(1, (i + 1) / steps);
+    ground.lineBetween(cx + (tx - cx) * a, cy + (ty - cy) * a, cx + (tx - cx) * z, cy + (ty - cy) * z);
+  }
+  if (rally.kind === 'node') {
+    ground.lineStyle(2, color, 0.95);
+    ground.strokeEllipse(tx, ty + 4, 44, 20);
+    return;
+  }
+  // 깃발: 땅에 납작한 고리 + 깃대 + 삼각 깃
+  ground.lineStyle(2, color, 0.9);
+  ground.strokeEllipse(tx, ty + 4, 30, 13);
+  top.lineStyle(2, 0xd9d9d9, 1);
+  top.lineBetween(tx, ty + 4, tx, ty - 30);
+  top.fillStyle(color, 1);
+  top.fillTriangle(tx, ty - 30, tx + 18, ty - 24, tx, ty - 18);
+  top.lineStyle(1, 0x000000, 0.8);
+  top.strokeTriangle(tx, ty - 30, tx + 18, ty - 24, tx, ty - 18);
+}
+
 export function drawOverlays(
   ground: Phaser.GameObjects.Graphics,
   top: Phaser.GameObjects.Graphics,
@@ -102,7 +146,10 @@ export function drawOverlays(
     top.lineStyle(2, PALETTE.selection, 0.8);
     top.strokeRect(inspected.x * TILE_SIZE, inspected.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
   }
-  for (const b of world.buildings) drawBuilding(top, b, selectedIds.has(b.id));
+  for (const b of world.buildings) {
+    drawBuilding(top, b, selectedIds.has(b.id));
+    if (selectedIds.has(b.id)) drawRally(ground, top, world, b);
+  }
   for (const unit of world.units) {
     if (unit.hp <= 0) continue;
     const { x, y } = unitScreenPos(unit, alpha);

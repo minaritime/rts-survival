@@ -21,6 +21,7 @@ import { canBuild } from '../sim/entities.ts';
 import { createTutorialView, type TutorialView } from './tutorialView.ts';
 import { createUnitInput, type UnitInput } from './unitInput.ts';
 import { createWaveBanner, type WaveBanner } from './waveBanner.ts';
+import { createPings, type Pings } from './commandPings.ts';
 
 const cursorPoint = (c: Cursor): { x: number; y: number } => ({ x: c.x, y: c.y });
 
@@ -42,6 +43,7 @@ export class GameScene extends Phaser.Scene {
   private tutorial!: TutorialState;
   private stageDialog!: StageDialog;
   private waveBanner!: WaveBanner;
+  private pings!: Pings;
   private mode: GameMode = 'tutorial';
   private groundOverlay!: Phaser.GameObjects.Graphics;
   private topOverlay!: Phaser.GameObjects.Graphics;
@@ -109,10 +111,12 @@ export class GameScene extends Phaser.Scene {
       cancelAttack: () => this.unitInput.cancelTargeting(),
       getGroups: () => this.unitInput.groups,
       getInspected: () => this.unitInput.inspected,
+      selectOnly: (id) => this.unitInput.selectOnly(id),
     });
     this.minimap.layout(this.hud.layout.minimap);
     this.cameraControl = createCameraControl(this, this.cursor, this.minimap.contains);
     this.tutorialView = createTutorialView(this, this.minimap.camera, () => this.hud.layout);
+    this.pings = createPings();
     this.unitInput = createUnitInput(this, {
       getWorld: () => this.world,
       getAlpha: () => this.stepper.alpha,
@@ -121,6 +125,7 @@ export class GameScene extends Phaser.Scene {
       isActive: isRunning,
       isPlacing: () => this.placement?.active ?? false,
       minimapCamera: this.minimap.camera,
+      onPing: (x, y, kind) => this.pings.add(x, y, kind),
     });
     // unitInput 다음에 만든다: 같은 클릭에서 unitInput 이 먼저 "놓는 중" 을 보고 양보해야 함
     this.placement = createPlacement(this, {
@@ -160,6 +165,7 @@ export class GameScene extends Phaser.Scene {
     const alpha = this.stepper.alpha;
     this.sprites.update(this.world, alpha, time);
     drawOverlays(this.groundOverlay, this.topOverlay, this.world, alpha, this.unitInput.selected, this.unitInput.inspected);
+    this.pings.draw(this.groundOverlay, performance.now());
     this.minimap.update(this.world, time);
     this.waveBanner.update(this.world, time);
     this.hud.update(cursorPoint(this.cursor));
