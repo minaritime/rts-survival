@@ -1,0 +1,30 @@
+{
+  "name": "rts-survival",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm test",
+    "shot": "node scripts/screenshot.mjs",
+    "art:sprites": "node art/tools/run-blender.mjs art/blender/render_sprites.py art/out/frames && node art/tools/pack-sprites.mjs && node art/tools/make-icons.mjs",
+    "art:terrain": "node art/tools/run-blender.mjs art/blender/render_terrain.py src/maps/map1.ts public/assets/terrain/map1.jpg 24",
+    "art": "npm run art:sprites && npm run art:terrain",
+    "art:icons": "node art/tools/make-icons.mjs"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^5.1.0",
+    "playwright": "^1.65.0",
+    "pngjs": "^7.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^7.3.8",
+    "vitest": "^5.1.0"
+  }
+}
