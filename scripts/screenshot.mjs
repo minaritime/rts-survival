@@ -27,7 +27,8 @@ page.on('console', (m) => {
 const shot = async (name) => {
   const path = join(outDir, name);
   await page.screenshot({ path });
-  process.stdout.write(`저장: ${path}\n`);
+  // 장마다 줄을 찍지 않는다 (토큰 절약). 끝에 한 줄로 알림
+  shotCount += 1;
 };
 
 /** 칸 한가운데의 화면 좌표 (지금 카메라 기준) */
