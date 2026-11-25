@@ -1,5 +1,5 @@
 import { CREATURES, WAVES, type MonsterKind } from '../../data/monsters.ts';
-import { createCreature } from '../entities.ts';
+import { createCreature, isMonster } from '../entities.ts';
 import { nextRandom, pickOne } from '../random.ts';
 import { entranceDirections, type Direction, type World } from '../world.ts';
 
@@ -39,19 +39,60 @@ export function spawnWave(world: World, n: number, direction: Direction): void {
   });
 }
 
+/** 다음 공격까지 간격: 끝나기 2분 전부터는 절반 (최후의 파도) */
+export function intervalAfter(at: number, surviveSeconds: number | null): number {
+  const final = surviveSeconds !== null && at >= surviveSeconds - WAVES.finalSeconds;
+  return final ? WAVES.intervalSeconds / 2 : WAVES.intervalSeconds;
+}
+
+/** 끝나기 전에 아직 올 공격이 있는지 */
+export function hasMoreWaves(world: World): boolean {
+  const w = world.waves;
+  return w.enabled && w.retreatAt === null && (w.surviveSeconds === null || w.nextAt < w.surviveSeconds);
+}
+
 export function stepWaves(world: World, now: number): void {
   const w = world.waves;
-  if (!w.enabled || now < w.nextAt) return;
+  if (!w.enabled) return;
+  if (w.retreatAt !== null) {
+    stepRetreat(world, now);
+    return;
+  }
+  if (w.surviveSeconds !== null && now >= w.surviveSeconds) {
+    // 버텼다: 맵의 괴물이 모두 물러간다. 새 괴물은 더 안 나옴
+    w.retreatAt = now;
+    for (const c of world.creatures) {
+      if (!isMonster(c)) continue;
+      c.retreating = true;
+      c.path = [];
+      c.targetId = null;
+    }
+    return;
+  }
+  if (now < w.nextAt || !hasMoreWaves(world)) return;
   spawnWave(world, w.number, w.direction);
+  w.lastAt = w.nextAt;
   w.number += 1;
-  w.nextAt += WAVES.intervalSeconds;
+  w.nextAt += intervalAfter(w.nextAt, w.surviveSeconds);
   w.direction = pickOne(world, entranceDirections(world));
+}
+
+/** 물러가는 동안: 다 빠지거나 정한 시간이 지나면 승리 */
+function stepRetreat(world: World, now: number): void {
+  const left = world.creatures.some((c) => isMonster(c) && c.hp > 0);
+  if (!left || now >= world.waves.retreatAt! + WAVES.retreatSeconds) world.outcome = 'victory';
 }
 
 /** 공격이 30초 안에 오면 방향과 남은 초. 아니면 null */
 export function waveWarning(world: World, now: number): { direction: Direction; secondsLeft: number } | null {
   const w = world.waves;
-  if (!w.enabled) return null;
+  if (!hasMoreWaves(world)) return null;
   const left = w.nextAt - now;
   return left > 0 && left <= WAVES.warnSeconds ? { direction: w.direction, secondsLeft: left } : null;
+}
+
+/** 지난 공격(첫 공격이면 판 시작)부터 다음 공격까지 얼마나 왔는지 0~1 (최후의 파도에서 간격이 줄어도 맞게) */
+export function waveProgress(lastAt: number, nextAt: number, now: number): number {
+  const span = nextAt - lastAt;
+  return span <= 0 ? 1 : Math.max(0, Math.min(1, (now - lastAt) / span));
 }

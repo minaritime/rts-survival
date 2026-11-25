@@ -214,7 +214,7 @@ export function removeDead(world: World): void {
     if (u.hp > 0) continue;
     if (u.id === world.commanderId) {
       u.hp = 0;
-      world.outcome = 'defeat';
+      if (world.outcome === 'playing') world.outcome = 'defeat';
       continue;
     }
     world.units.splice(i, 1);

@@ -106,7 +106,14 @@ function walkCreature(world: World, c: Creature, distance: number): void {
     const next = c.path[0]!;
     if (!isWalkable(world, next.x, next.y)) {
       const wall = buildingAt(world, next.x, next.y);
-      if (wall && isMonster(c)) c.targetId = wall.id;
+      if (wall && isMonster(c) && !c.retreating) c.targetId = wall.id;
+      if (c.retreating && wall) {
+        // 물러가는 길에 건물이 있으면 그냥 지나간다 (막아 둔 벽에 갇혀 승리가 늦어지지 않게)
+        c.x = next.x;
+        c.y = next.y;
+        c.path.shift();
+        continue;
+      }
       c.path = [];
       return;
     }
@@ -124,6 +131,26 @@ function walkCreature(world: World, c: Creature, distance: number): void {
       left = 0;
     }
   }
+}
+
+/** 가장 가까운 괴물 입구 칸 */
+function nearestExit(world: World, c: Creature): Point | undefined {
+  const e = world.map.features.entrances;
+  return [...e.north, ...e.east].sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
+}
+
+/** 물러가기: 입구로 걸어가 맵 밖으로. 도착하면 true (치운다) */
+function stepRetreating(world: World, c: Creature, dt: number): boolean {
+  const exit = nearestExit(world, c);
+  if (!exit) return true;
+  if (Math.hypot(exit.x - c.x, exit.y - c.y) < 0.6) return true;
+  if (c.path.length === 0) {
+    const through = walkableThroughBuildings(world);
+    c.path = findPath((x, y) => isWalkable(world, x, y), tileOf(c), exit) ?? findPath(through, tileOf(c), exit) ?? [];
+    if (c.path.length === 0) return true; // 갈 길이 없으면 그냥 사라진다
+  }
+  walkCreature(world, c, CREATURES[c.kind].speed * 1.2 * dt);
+  return false;
 }
 
 function stepMonster(world: World, c: Creature, dt: number, now: number): void {
@@ -177,14 +204,18 @@ function stepGrazer(world: World, c: Creature, dt: number, now: number): void {
 }
 
 export function stepCreatures(world: World, dt: number, now: number): void {
+  const gone: Creature[] = [];
   for (const c of world.creatures) {
     c.prevX = c.x;
     c.prevY = c.y;
     c.cooldown = Math.max(0, c.cooldown - dt);
     if (c.hp <= 0) continue;
-    if (isMonster(c)) stepMonster(world, c, dt, now);
+    if (c.retreating) {
+      if (stepRetreating(world, c, dt)) gone.push(c);
+    } else if (isMonster(c)) stepMonster(world, c, dt, now);
     else stepGrazer(world, c, dt, now);
   }
+  for (const c of gone) world.creatures.splice(world.creatures.indexOf(c), 1);
   spreadMonsters(world, dt);
 }
 
@@ -229,7 +260,7 @@ function nudge(world: World, c: Creature, dx: number, dy: number): void {
 /** 배급처 칸에서 within 칸 안에 괴물이 있는지 (막힘 판정) */
 export function monsterNear(world: World, at: Point, within: number): boolean {
   return world.creatures.some(
-    (c) => c.hp > 0 && isMonster(c) && Math.max(Math.abs(c.x - at.x), Math.abs(c.y - at.y)) <= within,
+    (c) => c.hp > 0 && isMonster(c) && !c.retreating && Math.max(Math.abs(c.x - at.x), Math.abs(c.y - at.y)) <= within,
   );
 }
 

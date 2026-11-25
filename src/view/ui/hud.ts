@@ -88,7 +88,7 @@ export function createHud(scene: Phaser.Scene, minimapCamera: Phaser.Cameras.Sce
       commands.update(world, selected, cursor);
       queue.update(world, selected, cursor, cb.isActive());
       card.update(world, selected, cb.getInspected(), cursor, cb.isActive());
-      banner.setVisible(world.outcome === 'defeat');
+      banner.setVisible(false);
     },
     resize(width, height) {
       layout = computeLayout(width, height);

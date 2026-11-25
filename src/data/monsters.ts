@@ -71,4 +71,11 @@ export const WAVES = {
   chargerFromWave: 3,
   /** 돌진형이 차지하는 가치 비율 */
   chargerShare: 0.3,
+  /** 끝나기 전 이 초 동안은 공격 간격이 절반 ("최후의 파도", 기획.md 8-1) */
+  finalSeconds: 120,
+  /** 시간이 다 되면 괴물이 물러가는 시간. 이만큼 지나거나 다 빠지면 승리 (기획.md 4장) */
+  retreatSeconds: 10,
 } as const;
+
+/** 1맵 생존 시간 (기획.md 10장: 생존 15분) */
+export const STAGE1_SURVIVE_SECONDS = 15 * 60;

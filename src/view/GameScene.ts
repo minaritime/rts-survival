@@ -20,7 +20,9 @@ import { createStageDialog, type StageDialog } from './stageDialog.ts';
 import { canBuild } from '../sim/entities.ts';
 import { createTutorialView, type TutorialView } from './tutorialView.ts';
 import { createUnitInput, type UnitInput } from './unitInput.ts';
-import { createWaveBanner, type WaveBanner } from './waveBanner.ts';
+import { createWaveAlert, type WaveAlert } from './waveAlert.ts';
+import { createResultDialog, type ResultDialog } from './resultDialog.ts';
+import { STAGE1_SURVIVE_SECONDS } from '../data/monsters.ts';
 import { createPings, type Pings } from './commandPings.ts';
 
 const cursorPoint = (c: Cursor): { x: number; y: number } => ({ x: c.x, y: c.y });
@@ -42,7 +44,10 @@ export class GameScene extends Phaser.Scene {
   private tutorialView!: TutorialView;
   private tutorial!: TutorialState;
   private stageDialog!: StageDialog;
-  private waveBanner!: WaveBanner;
+  private waveAlert!: WaveAlert;
+  private resultDialog!: ResultDialog;
+  /** 괴물 퇴각 번쩍임을 한 번만 */
+  private flashedRetreat = false;
   private pings!: Pings;
   private mode: GameMode = 'tutorial';
   private groundOverlay!: Phaser.GameObjects.Graphics;
@@ -70,11 +75,14 @@ export class GameScene extends Phaser.Scene {
     // Phaser 는 다시 시작해도 같은 씬 객체를 쓴다. 필드 초깃값이 남지 않게 여기서 비운다
     this.cameraTravelTiles = 0;
     this.playMs = 0;
+    this.flashedRetreat = false;
     this.world = createWorld(parseMap(MAP1_ROWS));
     // 튜토리얼: 끝날 때까지 짓기·채집·생산을 빠르게 (data/tutorial.ts). 1스테이지는 정상 규칙
     this.world.tutorialRules = this.mode === 'tutorial';
     // 괴물 공격은 1스테이지부터 (튜토리얼은 배우는 데만 집중)
     this.world.waves.enabled = this.mode === 'stage1';
+    // 1스테이지: 15분 버티면 승리 (6단계)
+    if (this.mode === 'stage1') this.world.waves.surviveSeconds = STAGE1_SURVIVE_SECONDS;
     this.stepper = createStepper(TICK_SECONDS, MAX_TICKS_PER_FRAME);
 
     const { grid, features } = this.world.map;
@@ -121,7 +129,8 @@ export class GameScene extends Phaser.Scene {
       getWorld: () => this.world,
       getAlpha: () => this.stepper.alpha,
       cursorAt,
-      isBlockedAt: (p) => this.minimap.contains(p) || this.hud.blocks(p) || this.stageDialog.contains(p),
+      isBlockedAt: (p) =>
+        this.minimap.contains(p) || this.hud.blocks(p) || this.stageDialog.contains(p) || this.resultDialog.contains(p),
       isActive: isRunning,
       isPlacing: () => this.placement?.active ?? false,
       minimapCamera: this.minimap.camera,
@@ -136,8 +145,11 @@ export class GameScene extends Phaser.Scene {
       isActive: isRunning,
       minimapCamera: this.minimap.camera,
     });
-    this.waveBanner = createWaveBanner(this, this.minimap.camera);
-    this.waveBanner.layout(this.scale.width);
+    this.waveAlert = createWaveAlert(this, this.minimap.camera);
+    this.waveAlert.layout(this.scale.width, this.scale.height);
+    this.resultDialog = createResultDialog(this, this.minimap.camera, cursorAt, isRunning, () =>
+      this.scene.restart({ mode: this.mode }),
+    );
     this.pauseMenu = createPauseMenu(this, this.cursor, this.minimap.camera, this.mode === 'tutorial' ? '튜토리얼' : '1스테이지 초원');
     this.tutorial = startTutorial(this.tutorialInput());
     this.stageDialog = createStageDialog(this, this.minimap.camera, cursorAt, isRunning, () =>
@@ -167,7 +179,13 @@ export class GameScene extends Phaser.Scene {
     drawOverlays(this.groundOverlay, this.topOverlay, this.world, alpha, this.unitInput.selected, this.unitInput.inspected);
     this.pings.draw(this.groundOverlay, performance.now());
     this.minimap.update(this.world, time);
-    this.waveBanner.update(this.world, time);
+    this.waveAlert.update(this.world, time);
+    this.resultDialog.update(this.world, cursorPoint(this.cursor));
+    // 버텼다: 화면이 한 번 번쩍이고 괴물이 물러간다 (기획.md 4장)
+    if (this.world.waves.retreatAt !== null && !this.flashedRetreat) {
+      this.flashedRetreat = true;
+      this.cameras.main.flash(900, 255, 244, 214);
+    }
     this.hud.update(cursorPoint(this.cursor));
     this.cursor.update();
     this.unitInput.update();
@@ -215,6 +233,7 @@ export class GameScene extends Phaser.Scene {
     this.minimap.layout(this.hud.layout.minimap);
     this.pauseMenu.layout(width, height);
     this.stageDialog.layout(width, height);
-    this.waveBanner.layout(width);
+    this.waveAlert.layout(width, height);
+    this.resultDialog.layout(width, height);
   }
 }

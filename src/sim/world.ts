@@ -26,7 +26,7 @@ import { stepFeeders, stepHealing } from './systems/support.ts';
 import { stepHunger } from './systems/hunger.ts';
 import { stepUnits } from './systems/units.ts';
 
-export type Outcome = 'playing' | 'defeat';
+export type Outcome = 'playing' | 'defeat' | 'victory';
 
 /** 식량 배급처 (생존형 맵). 켜지면 식량이 들어온다 */
 export interface Feeder {
@@ -77,8 +77,14 @@ export interface WaveState {
   number: number;
   /** 다음 공격 시각 (초) */
   nextAt: number;
+  /** 지난 공격 시각 (아직 없으면 0 = 판 시작). 다음 공격까지 막대에 씀 */
+  lastAt: number;
   /** 다음 공격이 오는 방향 (30초 전에 알린다) */
   direction: Direction;
+  /** 생존형: 이 시각(초)까지 버티면 괴물이 물러가고 승리. null 이면 끝없음 */
+  surviveSeconds: number | null;
+  /** 괴물이 물러가기 시작한 시각. 아직이면 null */
+  retreatAt: number | null;
 }
 
 /** 화면에 잠깐 그리는 공격 (총알 선·근접 타격). 규칙에는 영향 없음 */
@@ -162,7 +168,7 @@ export function createWorld(map: MapDef, seed = 1): World {
     commanderId: commander.id,
     outcome: 'playing',
     tutorialRules: false,
-    waves: { enabled: false, number: 1, nextAt: WAVES.firstSeconds, direction: 'north' },
+    waves: { enabled: false, number: 1, nextAt: WAVES.firstSeconds, lastAt: 0, direction: 'north', surviveSeconds: null, retreatAt: null },
     rngState: seed,
     shots: [],
     commandCenterPlaced: false,
@@ -275,8 +281,9 @@ export function stepWorld(world: World): void {
   stepSelfBuild(world, TICK_SECONDS);
   stepUnits(world, TICK_SECONDS, now);
   stepTurrets(world, TICK_SECONDS);
-  stepCreatures(world, TICK_SECONDS, now);
+  // 공격 일정 먼저: 시간이 다 된 틱에는 괴물이 때리기 전에 물러가기 시작하게
   stepWaves(world, now);
+  stepCreatures(world, TICK_SECONDS, now);
   removeDead(world);
   if (world.outcome !== 'playing') return;
   stepBerries(world, now);

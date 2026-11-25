@@ -359,6 +359,32 @@ await shot('19-attack-target.png');
 await page.mouse.click(700, 300, { button: 'right' }); // 취소
 void scene;
 
+// 지도 경고: 다음 공격을 8초 뒤로 당기고 화면을 입구 쪽으로 (화면 밖이면 가장자리 화살표도 본다)
+await page.evaluate(() => {
+  const s = window.__rtsGame.scene.getScene('game');
+  s.world.waves.nextAt = s.world.tick / 20 + 8;
+});
+await page.waitForTimeout(300);
+await shot('20a-alert-edge.png');
+await page.evaluate(() => {
+  const s = window.__rtsGame.scene.getScene('game');
+  const gates = s.world.map.features.entrances[s.world.waves.direction];
+  s.cameras.main.centerOn(gates[0].x * 48, gates[0].y * 48 + 200);
+});
+await page.waitForTimeout(300);
+await shot('20b-alert-gate.png');
+
+// 6단계: 15분 끝 → 번쩍 + 퇴각 → 승리 창
+await page.evaluate(() => {
+  const s = window.__rtsGame.scene.getScene('game');
+  s.world.units[0].hp = 1e9;
+  s.world.tick = (s.world.waves.surviveSeconds - 1) * 20;
+  s.world.waves.nextAt = s.world.waves.surviveSeconds + 100;
+});
+await waitForWorld("world.outcome === 'victory'", 120000);
+await page.waitForTimeout(300);
+await shot('21-victory.png');
+
 await browser.close();
 
 if (errors.length > 0) {
