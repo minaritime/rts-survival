@@ -24,6 +24,7 @@ page.on('console', (m) => {
   if (m.type() === 'error') errors.push(`콘솔: ${m.text()}`);
 });
 
+let shotCount = 0;
 const shot = async (name) => {
   const path = join(outDir, name);
   await page.screenshot({ path });
@@ -392,3 +393,4 @@ if (errors.length > 0) {
   process.stderr.write(errors.join('\n') + '\n');
   process.exit(1);
 }
+process.stdout.write(`ok ${shotCount}장 -> ${outDir}\n`);
