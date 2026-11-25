@@ -17,7 +17,7 @@ export interface PickedItem {
   readonly icon: string;
   /** 체력. 자원처럼 체력이 없으면 null */
   readonly hp: Gauge | null;
-  /** 괴물·사냥감이면 true (빨간 테두리) */
+  /** 괴물·사냥감·거울 적이면 true (빨간 테두리) */
   readonly foe: boolean;
 }
 
@@ -27,10 +27,10 @@ export function pickedItems(world: World, selected: ReadonlySet<number>): Picked
     .filter((u) => selected.has(u.id) && u.hp > 0)
     .sort((a, b) => Number(b.id === world.commanderId) - Number(a.id === world.commanderId));
   return [
-    ...units.map((u) => ({ id: u.id, icon: iconKey(u.kind), hp: { value: u.hp, max: u.maxHp }, foe: false })),
+    ...units.map((u) => ({ id: u.id, icon: iconKey(u.kind), hp: { value: u.hp, max: u.maxHp }, foe: u.owner === 'enemy' })),
     ...world.buildings
       .filter((b) => selected.has(b.id))
-      .map((b) => ({ id: b.id, icon: iconKey(b.kind), hp: { value: b.hp, max: b.maxHp }, foe: false })),
+      .map((b) => ({ id: b.id, icon: iconKey(b.kind), hp: { value: b.hp, max: b.maxHp }, foe: b.owner === 'enemy' })),
     ...world.creatures
       .filter((c) => selected.has(c.id) && c.hp > 0)
       .map((c) => ({ id: c.id, icon: iconKey(c.kind), hp: { value: c.hp, max: c.maxHp }, foe: true })),

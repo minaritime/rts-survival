@@ -7,7 +7,8 @@ import { buildingAt, findUnit, isWalkable, type World } from '../world.ts';
 import { distanceToBuilding, strike, withinRange } from './combat.ts';
 
 /**
- * 괴물과 사냥감의 움직임 (기획.md 8-1).
+ * 괴물과 사냥감의 움직임 (기획.md 8-1). 괴물은 내 것만 노린다 (거울 적과는 아직 싸우지 않음, 혼합형에서 정할 것).
+ * 단 거울 적 유닛·포탑은 가까이 온 괴물을 친다 (combat.ts).
  * 괴물: 가까이(aggroRange) 있는 내 유닛·건물을 먼저 치고, 없으면 가장 가까운 내 건물(없으면 지휘관)로 간다.
  *       길이 벽에 막혀 있으면 벽을 부수며 간다. 괴물끼리·유닛과는 겹쳐 지나간다.
  * 사냥감: 처음 자리 둘레를 어슬렁거린다.
@@ -45,14 +46,14 @@ function nearestPlayerThing(world: World, c: Creature, within: number): Target |
   let bestD = within;
   for (const unit of world.units) {
     const d = Math.hypot(unit.x - c.x, unit.y - c.y);
-    if (unit.hp > 0 && d <= bestD) {
+    if (unit.hp > 0 && unit.owner === 'player' && d <= bestD) {
       best = { unit };
       bestD = d;
     }
   }
   for (const building of world.buildings) {
     const d = distanceToBuilding(building, c.x, c.y);
-    if (d <= bestD) {
+    if (building.owner === 'player' && d <= bestD) {
       best = { building };
       bestD = d;
     }
@@ -66,7 +67,7 @@ function mainTarget(world: World, c: Creature): Target | null {
   let bestD = Infinity;
   for (const building of world.buildings) {
     const d = distanceToBuilding(building, c.x, c.y);
-    if (d < bestD) {
+    if (building.owner === 'player' && d < bestD) {
       best = { building };
       bestD = d;
     }
@@ -74,7 +75,7 @@ function mainTarget(world: World, c: Creature): Target | null {
   if (best) return best;
   for (const unit of world.units) {
     const d = Math.hypot(unit.x - c.x, unit.y - c.y);
-    if (unit.hp > 0 && d < bestD) {
+    if (unit.hp > 0 && unit.owner === 'player' && d < bestD) {
       best = { unit };
       bestD = d;
     }

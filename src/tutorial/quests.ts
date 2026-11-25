@@ -47,16 +47,16 @@ interface Quest {
 /** 1맵 사령부 추천 자리 (왼쪽 위 칸). 미네랄(x=7)과 두 칸 띄워 일꾼이 오갈 길을 남김 */
 export const SUGGESTED_COMMAND_CENTER = { x: 10, y: 20 } as const;
 
-const commandCenters = (world: World) => world.buildings.filter((b) => b.kind === 'commandCenter');
+const commandCenters = (world: World) => world.buildings.filter((b) => b.kind === 'commandCenter' && b.owner === 'player');
 
 /** 1맵 병영 추천 자리 (왼쪽 위 칸): 사령부 오른쪽 */
 export const SUGGESTED_BARRACKS = { x: 15, y: 20 } as const;
 
-const unitsOf = (world: World, kind: UnitKind) => world.units.filter((u) => u.kind === kind && u.hp > 0).length;
+const unitsOf = (world: World, kind: UnitKind) => world.units.filter((u) => u.kind === kind && u.hp > 0 && u.owner === 'player').length;
 
 /** 그 건물(첫 번째) 한가운데 칸 */
 function buildingTarget(world: World, kind: BuildingKind): QuestTarget {
-  const b = world.buildings.find((x) => x.kind === kind);
+  const b = world.buildings.find((x) => x.kind === kind && x.owner === 'player');
   return b ? { kind: 'tile', x: b.x + Math.floor(b.width / 2), y: b.y + Math.floor(b.height / 2) } : null;
 }
 
@@ -171,9 +171,9 @@ export const QUESTS: readonly Quest[] = [
     id: 'build-barracks',
     title: '병영을 지으세요',
     detail: '지휘관이나 일꾼을 고르고 명령 칸의 병영(B)을 누른 뒤\n화살표가 가리키는 빈 땅을 클릭합니다',
-    isDone: (input) => input.world.buildings.some((b) => b.kind === 'barracks' && b.complete),
+    isDone: (input) => input.world.buildings.some((b) => b.kind === 'barracks' && b.complete && b.owner === 'player'),
     target: (input) => {
-      const b = input.world.buildings.find((x) => x.kind === 'barracks');
+      const b = input.world.buildings.find((x) => x.kind === 'barracks' && x.owner === 'player');
       return b ? { kind: 'tile', x: b.x + 1, y: b.y + 1 } : { kind: 'tile', x: SUGGESTED_BARRACKS.x + 1, y: SUGGESTED_BARRACKS.y + 1 };
     },
   },

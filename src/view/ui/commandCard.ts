@@ -151,12 +151,12 @@ function cancelButton(buildings: readonly Building[]): CommandButton {
  * - 생산 건물만(첫 건물과 같은 종류, 다 지은 것): 유닛 + 취소
  */
 export function commandsFor(world: World, selected: ReadonlySet<number>): readonly CommandButton[] {
-  const units = world.units.filter((u) => selected.has(u.id) && u.hp > 0);
+  const units = world.units.filter((u) => selected.has(u.id) && u.hp > 0 && u.owner === 'player');
   if (units.some(canBuild)) return [ATTACK, STOP, ...BUILD_BUTTONS.map((b) => buildButton(b.row, b.col, b.kind, world))];
   if (units.length > 0) return [ATTACK, STOP];
-  const first = world.buildings.find((b) => selected.has(b.id) && b.complete);
+  const first = world.buildings.find((b) => selected.has(b.id) && b.complete && b.owner === 'player');
   if (!first) return [];
-  const same = world.buildings.filter((b) => selected.has(b.id) && b.complete && b.kind === first.kind);
+  const same = world.buildings.filter((b) => selected.has(b.id) && b.complete && b.kind === first.kind && b.owner === 'player');
   const trains = BUILDINGS[first.kind].trains ?? [];
   if (trains.length === 0) return [];
   return [...trains.map((k) => trainButton(k, same, world)), cancelButton(same)];

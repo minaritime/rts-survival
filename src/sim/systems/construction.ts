@@ -4,13 +4,14 @@ import { TUTORIAL_RULES } from '../../data/tutorial.ts';
 import { BUILD_START_HP_RATIO, goIdle, unitTile, type Building, type Unit } from '../entities.ts';
 import { walkableFrom } from '../navigation.ts';
 import { findPathNextToRect, rectDistance } from '../path.ts';
-import { removeBuilding, type World } from '../world.ts';
+import { removeBuilding, stockOf, type World } from '../world.ts';
 
 /** 다 지었을 때: 체력을 채우고, 건물이 주는 것(식량 한도 등)을 준다 */
 function complete(world: World, building: Building): void {
   building.progress = 1;
   building.complete = true;
   building.hp = Math.min(building.maxHp, Math.round(building.hp));
+  if (building.owner !== 'player') return;
   const spec = BUILDINGS[building.kind];
   if (spec.foodCap !== undefined) world.foodCap = Math.max(world.foodCap, spec.foodCap);
   world.stats.buildingsCompleted += 1;
@@ -39,7 +40,7 @@ function nextInQueue(world: World, unit: Unit): void {
 function giveUp(world: World, building: Building): void {
   if (building.progress > 0) return;
   removeBuilding(world, building);
-  world.stock.mineral += BUILDINGS[building.kind].mineral;
+  stockOf(world, building.owner).mineral += BUILDINGS[building.kind].mineral;
 }
 
 /**
@@ -103,7 +104,7 @@ export function stepSelfBuild(world: World, dt: number): void {
  */
 export function stepRepair(world: World, unit: Unit, buildingId: number, dt: number): void {
   const building = world.buildings.find((b) => b.id === buildingId);
-  if (!building || !building.complete || building.hp >= building.maxHp) {
+  if (!building || !building.complete || building.hp >= building.maxHp || building.owner !== unit.owner) {
     goIdle(unit);
     return;
   }
@@ -116,14 +117,15 @@ export function stepRepair(world: World, unit: Unit, buildingId: number, dt: num
     return;
   }
   const want = Math.min(building.maxHp - building.hp, (building.maxHp / BUILDINGS[building.kind].buildSeconds) * dt);
-  const afford = world.stock.mineral / REPAIR.mineralPerHp;
+  const stock = stockOf(world, unit.owner);
+  const afford = stock.mineral / REPAIR.mineralPerHp;
   const gain = Math.min(want, afford);
   if (gain <= 0) {
     goIdle(unit);
     return;
   }
   building.hp += gain;
-  world.stock.mineral -= gain * REPAIR.mineralPerHp;
+  stock.mineral -= gain * REPAIR.mineralPerHp;
   if (building.hp >= building.maxHp - 1e-9) {
     building.hp = building.maxHp;
     goIdle(unit);

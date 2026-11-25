@@ -148,13 +148,19 @@ export function drawOverlays(
   }
   for (const b of world.buildings) {
     drawBuilding(top, b, selectedIds.has(b.id));
-    if (selectedIds.has(b.id)) drawRally(ground, top, world, b);
+    if (selectedIds.has(b.id) && b.owner === 'player') drawRally(ground, top, world, b);
   }
   for (const unit of world.units) {
     if (unit.hp <= 0) continue;
     const { x, y } = unitScreenPos(unit, alpha);
     const picked = selectedIds.has(unit.id);
-    if (picked) drawSelection(ground, x, y);
+    const enemy = unit.owner === 'enemy';
+    // 적 유닛은 늘 발밑에 옅은 붉은 고리 (편을 한눈에), 고르면 진한 빨강
+    if (enemy && !picked) {
+      ground.lineStyle(1.5, PALETTE.enemy, 0.45);
+      ground.strokeEllipse(x, y + 4, 34, 15);
+    }
+    if (picked) drawSelection(ground, x, y, enemy ? FOE_RING : PALETTE.selection);
     drawProgress(top, world, unit, x, y);
     if (picked || unit.hp < unit.maxHp) drawHpBar(top, x, y - 52, 32, unit.hp, unit.maxHp);
     if (unit.carry > 0) {

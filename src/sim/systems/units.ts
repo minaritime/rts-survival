@@ -119,15 +119,16 @@ export function workSecondsFor(world: World, kind: ResourceNode['kind']): number
 /** 채집 명령: 옆에 붙어 있으면 일하고, 아니면 다가간다 */
 function stepGather(world: World, unit: Unit, nodeId: number, dt: number, nowSeconds: number): void {
   const node = world.nodes.find((n) => n.id === nodeId);
+  // 일꾼은 들고 사령부까지 나른다 (harvest.ts, 적 일꾼의 열매 포함). 덤불이 비어도 든 것은 내려놓으러 간다
+  if (unit.kind === 'worker' && node && canGather(unit, node.kind) && (node.amount > 0 || unit.carry > 0)) {
+    stepHarvest(world, unit, node, dt, nowSeconds);
+    return;
+  }
+  // 지휘관은 바로 들어온다
   const nothingLeft = !node || node.amount <= 0;
   const pocketFull = (node?.kind === 'berry' || node?.kind === 'meat') && pocketIsFull(world);
   if (nothingLeft || pocketFull || !canGather(unit, node.kind)) {
     goIdle(unit);
-    return;
-  }
-  // 일꾼의 미네랄은 들고 사령부까지 나른다 (harvest.ts). 지휘관은 바로 들어온다
-  if (unit.kind === 'worker' && node.kind === 'mineral') {
-    stepHarvest(world, unit, node, dt);
     return;
   }
   if (unit.path.length > 0) return; // 아직 가는 중

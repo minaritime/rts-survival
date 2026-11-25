@@ -1,0 +1,338 @@
+import { BUILDINGS, SUPPLY_MAX, type BuildingKind } from '../../data/buildings.ts';
+import { ENEMY } from '../../data/enemy.ts';
+import { UNITS } from '../../data/units.ts';
+import type { EnemyPlan } from '../../maps/map3.ts';
+import { canPlace, commandAttackMove, commandBuild, commandGather, commandMove, commandTrain, orderBuild } from '../commands.ts';
+import { createBuilding, createTrainedUnit, type Building, type ResourceNode, type Unit } from '../entities.ts';
+import type { Point } from '../grid.ts';
+import { rectDistance } from '../path.ts';
+import { distanceToBuilding } from '../systems/combat.ts';
+import { addBuilding, commanderOf, isWalkable, supplyCap, supplyUsed, type EnemyState, type World } from '../world.ts';
+
+/**
+ * 거울 적 기지의 머리 (기획.md 8-2). 대본 + 상태 기계, 1초마다 생각한다.
+ * 1. 일꾼: 16기까지 뽑고, 쉬는 일꾼은 미네랄로. 일꾼이 8기를 넘으면 2기는 덤불 열매를 따 나른다 (내 식량 수급 방해)
+ * 2. 건설: 맵 대본(buildOrder)의 시각이 되면 정해진 자리에. 보급이 모자라면 보급고를 더 짓는다
+ * 3. 병력: 병영마다 소총병을 계속 뽑아 집결지에 모은다
+ * 4. 공격: 첫 공격 시각이 지나고 병력이 기준치에 닿으면 내 건물 중 가장 가까운 곳으로. 절반 이하로 줄면 물러나고 기준치 +4.
+ *    공격대가 나가 있는 동안 집에서는 다음 공격대를 모은다
+ * 5. 수비: 내 유닛이 적 건물 곁(12칸)에 오면 쉬는 병력이 그쪽으로
+ * 확장(8분마다 새 사령부)은 아직 없음.
+ */
+
+/** 내 유닛이 적 건물에 이만큼 가까우면 수비하러 나온다 */
+const DEFEND_RADIUS = 12;
+/** 집결지에서 이보다 멀리 쉬고 있는 병력은 집결지로 부른다 */
+const RALLY_SLACK = 4;
+/** 쉬는 일꾼에게 줄 미네랄은 사령부에서 이 칸 안 */
+const MINERAL_RADIUS = 10;
+
+export function setupEnemy(world: World, plan: EnemyPlan): void {
+  for (const s of plan.start) {
+    const b = createBuilding(world.nextId++, s.kind, s.at, false, 'enemy');
+    b.progress = 1;
+    b.complete = true;
+    b.hp = b.maxHp;
+    addBuilding(world, b);
+  }
+  const center = enemyBuildings(world).find((b) => b.kind === 'commandCenter');
+  if (!center) throw new Error('적 기지에 사령부가 없음');
+  for (const kind of ['barracks'] as const) {
+    for (const b of enemyBuildings(world).filter((x) => x.kind === kind)) b.rally = { kind: 'point', ...plan.rally };
+  }
+  const spots = freeTilesAround(world, center, plan.workers);
+  for (const at of spots) world.units.push(createTrainedUnit(world.nextId++, 'worker', at, 'enemy'));
+  const guards = freeTilesAround(world, { x: plan.rally.x, y: plan.rally.y, width: 1, height: 1 }, plan.riflemen);
+  for (const at of guards) world.units.push(createTrainedUnit(world.nextId++, 'rifleman', at, 'enemy'));
+}
+
+/** 사각형 둘레의 빈 칸 count 개 (가까운 고리부터) */
+function freeTilesAround(world: World, rect: { x: number; y: number; width: number; height: number }, count: number): Point[] {
+  const out: Point[] = [];
+  const taken = new Set(world.units.map((u) => `${Math.round(u.x)},${Math.round(u.y)}`));
+  for (let ring = 1; ring <= 8 && out.length < count; ring++) {
+    for (let y = rect.y - ring; y < rect.y + rect.height + ring && out.length < count; y++) {
+      for (let x = rect.x - ring; x < rect.x + rect.width + ring && out.length < count; x++) {
+        if (rectDistance(rect, x, y) !== ring || !isWalkable(world, x, y) || taken.has(`${x},${y}`)) continue;
+        out.push({ x, y });
+        taken.add(`${x},${y}`);
+      }
+    }
+  }
+  return out;
+}
+
+function enemyBuildings(world: World): Building[] {
+  return world.buildings.filter((b) => b.owner === 'enemy');
+}
+
+function enemyUnits(world: World, kind: Unit['kind']): Unit[] {
+  return world.units.filter((u) => u.owner === 'enemy' && u.kind === kind && u.hp > 0);
+}
+
+export function stepEnemyAi(world: World, now: number): void {
+  const enemy = world.enemy;
+  if (!enemy || now < enemy.nextThinkAt) return;
+  enemy.nextThinkAt = now + ENEMY.thinkSeconds;
+  if (enemyBuildings(world).length === 0) return;
+  manageWorkers(world);
+  resumeAbandoned(world);
+  const reserved = planBuilding(world, enemy, now);
+  trainUnits(world, enemy, reserved);
+  controlArmy(world, enemy, now);
+}
+
+// ── 일꾼 ──
+
+function manageWorkers(world: World): void {
+  const workers = enemyUnits(world, 'worker');
+  const foraging = workers.filter((u) => isForaging(world, u)).length;
+  let wantForagers = workers.length >= ENEMY.foragersFromWorkers ? ENEMY.foragers - foraging : 0;
+  for (const w of workers) {
+    if (w.order.type !== 'idle') continue;
+    if (wantForagers > 0) {
+      const bush = nearestBush(world, w);
+      if (bush && commandGather(world, [w.id], bush.id)) {
+        wantForagers -= 1;
+        continue;
+      }
+    }
+    const mineral = nearestMineral(world, w);
+    if (mineral) commandGather(world, [w.id], mineral.id);
+  }
+}
+
+function isForaging(world: World, u: Unit): boolean {
+  if (u.order.type !== 'gather') return false;
+  const id = u.order.nodeId;
+  return world.nodes.some((n) => n.id === id && n.kind === 'berry');
+}
+
+/** 열매가 있는 덤불 중 가장 가까운 것 */
+function nearestBush(world: World, u: Unit): ResourceNode | undefined {
+  return world.nodes
+    .filter((n) => n.kind === 'berry' && n.amount > 0)
+    .sort((a, b) => Math.hypot(a.x - u.x, a.y - u.y) - Math.hypot(b.x - u.x, b.y - u.y))[0];
+}
+
+/** 적 사령부 곁 미네랄 중 이 일꾼에게 가장 가까운 것 */
+function nearestMineral(world: World, u: Unit): ResourceNode | undefined {
+  const centers = enemyBuildings(world).filter((b) => b.kind === 'commandCenter' && b.complete);
+  return world.nodes
+    .filter((n) => n.kind === 'mineral' && centers.some((c) => rectDistance(c, n.x, n.y) <= MINERAL_RADIUS))
+    .sort((a, b) => Math.hypot(a.x - u.x, a.y - u.y) - Math.hypot(b.x - u.x, b.y - u.y))[0];
+}
+
+/** 미네랄을 캐는 중이고 빈손인 일꾼 중 그 자리에 가장 가까운 것 (짓기에 뺀다) */
+function pickBuilder(world: World, at: Point): Unit | undefined {
+  return enemyUnits(world, 'worker')
+    .filter((u) => u.carry === 0 && (u.order.type === 'idle' || (u.order.type === 'gather' && !isForaging(world, u))))
+    .sort((a, b) => Math.hypot(a.x - at.x, a.y - at.y) - Math.hypot(b.x - at.x, b.y - at.y))[0];
+}
+
+/** 짓던 일꾼이 죽어 멈춘 건물은 다른 일꾼이 이어 짓는다 */
+function resumeAbandoned(world: World): void {
+  for (const b of enemyBuildings(world)) {
+    if (b.complete) continue;
+    const building = world.units.some((u) => u.owner === 'enemy' && u.order.type === 'build' && u.order.buildingId === b.id);
+    if (building) continue;
+    const worker = pickBuilder(world, { x: b.x, y: b.y });
+    if (worker) orderBuild(world, [worker.id], b);
+  }
+}
+
+// ── 건설 ──
+
+/** 대본 한 줄을 이만큼 못 지으면 건너뛴다 (내 유닛이 자리에 버티고 서 있는 등) */
+const STEP_GIVE_UP_SECONDS = 20;
+
+/**
+ * 짓기를 하나 시도한다. 미네랄만 모자라 기다리는 중이면 그 값(생산에 쓰지 않고 남겨 둘 양)을 돌려준다.
+ * 지을 일꾼이 없거나 자리가 막혀 못 짓는 동안은 미네랄을 묶어 두지 않는다 (생산까지 멈추지 않게)
+ */
+function planBuilding(world: World, enemy: EnemyState, now: number): number {
+  if (needsDepot(world)) {
+    const slot = freeSlot(world, 'supplyDepot', enemy.plan.depotSlots) ?? spotNearBase(world, 'supplyDepot');
+    if (slot) return Math.max(0, attempt(world, enemy, 'supplyDepot', slot));
+  }
+  const step = enemy.plan.buildOrder[enemy.buildIndex];
+  if (!step || now < step.afterSeconds) {
+    enemy.stepWaitSince = null;
+    return 0;
+  }
+  enemy.stepWaitSince ??= now;
+  const outcome = attempt(world, enemy, step.kind, step.at);
+  // 미네랄을 모으며 기다리는 것은 괜찮다. 일꾼이 없거나 자리가 안 비는 동안만 포기 시간을 센다
+  if (outcome > 0) enemy.stepWaitSince = now;
+  // 자리가 내 건물 등으로 막혔거나 너무 오래 못 지었으면 건너뛴다
+  const blocked = !canPlace(world, step.kind, step.at, allUnitIds(world));
+  if (outcome === BUILT || blocked || now - enemy.stepWaitSince > STEP_GIVE_UP_SECONDS) {
+    enemy.buildIndex += 1;
+    enemy.stepWaitSince = null;
+    return 0;
+  }
+  return outcome;
+}
+
+/** attempt 가 지었을 때 돌려주는 값 (남겨 둘 미네랄 0 과 구별) */
+const BUILT = -1;
+
+/** 지었으면 BUILT, 미네랄만 모자라면 그 비용, 그 밖(일꾼 없음·자리 막힘)은 0 */
+function attempt(world: World, enemy: EnemyState, kind: BuildingKind, at: Point): number {
+  const cost = BUILDINGS[kind].mineral;
+  if (!canPlace(world, kind, at, allUnitIds(world))) return 0;
+  const builder = pickBuilder(world, at);
+  if (!builder) return 0;
+  if (enemy.stock.mineral < cost) return cost;
+  clearFootprint(world, kind, at, builder.id);
+  return tryBuild(world, enemy, kind, at, builder) ? BUILT : 0;
+}
+
+/** 지을 자리에 서 있는 적 유닛을 둘레로 비킨다 (집결지 곁 자리에 병력이 서 있어 영영 못 짓는 일이 없게) */
+function clearFootprint(world: World, kind: BuildingKind, at: Point, builderId: number): void {
+  const spec = BUILDINGS[kind];
+  const rect = { x: at.x, y: at.y, width: spec.width, height: spec.height };
+  const inside = world.units.filter(
+    (u) => u.owner === 'enemy' && u.hp > 0 && u.id !== builderId && rectDistance(rect, Math.round(u.x), Math.round(u.y)) === 0,
+  );
+  if (inside.length === 0) return;
+  const spots = freeTilesAround(world, { ...rect, x: rect.x - 1, y: rect.y - 1, width: rect.width + 2, height: rect.height + 2 }, inside.length);
+  inside.forEach((u, i) => {
+    const spot = spots[i];
+    if (spot) commandMove(world, [u.id], spot);
+  });
+}
+
+/** 보급고 자리가 다 막혔을 때: 적 사령부 둘레에서 놓을 수 있는 곳 */
+function spotNearBase(world: World, kind: BuildingKind): Point | undefined {
+  const center = enemyBuildings(world).find((b) => b.kind === 'commandCenter');
+  if (!center) return undefined;
+  for (let ring = 3; ring <= 10; ring++) {
+    for (let y = center.y - ring; y <= center.y + center.height + ring; y++) {
+      for (let x = center.x - ring; x <= center.x + center.width + ring; x++) {
+        if (rectDistance(center, x, y) !== ring) continue;
+        if (canPlace(world, kind, { x, y }, allUnitIds(world))) return { x, y };
+      }
+    }
+  }
+  return undefined;
+}
+
+function allUnitIds(world: World): number[] {
+  return world.units.map((u) => u.id);
+}
+
+function tryBuild(world: World, enemy: EnemyState, kind: BuildingKind, at: Point, builder: Unit): boolean {
+  const b = commandBuild(world, [builder.id], kind, at);
+  if (b && BUILDINGS[kind].trains?.includes('rifleman')) b.rally = { kind: 'point', ...enemy.plan.rally };
+  return b !== null;
+}
+
+/** 보급이 곧 모자라고, 짓는 보급고도 없으면 true */
+function needsDepot(world: World): boolean {
+  const cap = supplyCap(world, 'enemy');
+  if (cap >= SUPPLY_MAX) return false;
+  const building = enemyBuildings(world).some((b) => b.kind === 'supplyDepot' && !b.complete);
+  return !building && supplyUsed(world, 'enemy') + ENEMY.supplyMargin >= cap;
+}
+
+function freeSlot(world: World, kind: BuildingKind, slots: readonly Point[]): Point | undefined {
+  return slots.find((p) => canPlace(world, kind, p, allUnitIds(world)));
+}
+
+// ── 생산 ──
+
+/** 공격에 나가지 않은(집에 있는) 소총병 */
+function homeArmy(world: World, enemy: EnemyState): Unit[] {
+  return enemyUnits(world, 'rifleman').filter((u) => !enemy.attackers.includes(u.id));
+}
+
+/**
+ * 일꾼은 16기까지, 소총병은 집에 있는 병력이 공격 기준치에 닿을 때까지만 (기획.md 8-2 "병력 모으기: 기준치까지").
+ * 기다리는 건물 미네랄(reserved)은 남겨 둔다.
+ */
+function trainUnits(world: World, enemy: EnemyState, reserved: number): void {
+  const workers = enemyUnits(world, 'worker').length;
+  let queuedWorkers = 0;
+  let soldiers = homeArmy(world, enemy).length * UNITS.rifleman.supply;
+  for (const b of enemyBuildings(world)) soldiers += b.trainQueue.filter((k) => k === 'rifleman').length * UNITS.rifleman.supply;
+  for (const b of enemyBuildings(world)) {
+    if (!b.complete || b.trainQueue.length > 0) continue;
+    const spare = enemy.stock.mineral - reserved;
+    // 일꾼은 수입이라 남겨 둘 미네랄과 상관없이 뽑는다 (일꾼이 없어 건물을 못 짓는 교착을 막음)
+    if (b.kind === 'commandCenter') {
+      if (workers + queuedWorkers < ENEMY.workerTarget && enemy.stock.mineral >= UNITS.worker.mineral && commandTrain(world, b.id, 'worker')) {
+        queuedWorkers += 1;
+      }
+    } else if (b.kind === 'barracks' && soldiers < enemy.threshold && spare >= UNITS.rifleman.mineral) {
+      if (commandTrain(world, b.id, 'rifleman')) soldiers += UNITS.rifleman.supply;
+    }
+  }
+}
+
+// ── 병력 ──
+
+function controlArmy(world: World, enemy: EnemyState, now: number): void {
+  if (enemy.attackers.length > 0) {
+    stepAttack(world, enemy, now);
+    return;
+  }
+  const army = homeArmy(world, enemy);
+  if (defend(world, army)) return;
+  const supply = army.length * UNITS.rifleman.supply;
+  const target = attackTarget(world, enemy.plan.rally);
+  if (now >= enemy.nextAttackAt && supply >= enemy.threshold && target) {
+    enemy.attackers = army.map((u) => u.id);
+    enemy.attackSize = army.length;
+    enemy.attacksLaunched += 1;
+    commandAttackMove(world, enemy.attackers, target);
+    return;
+  }
+  const stray = army.filter(
+    (u) => u.order.type === 'idle' && u.engageId === null && Math.hypot(u.x - enemy.plan.rally.x, u.y - enemy.plan.rally.y) > RALLY_SLACK,
+  );
+  if (stray.length > 0) commandMove(world, stray.map((u) => u.id), enemy.plan.rally);
+}
+
+/**
+ * 공격 중: 쉬게 된 공격대는 다음 내 건물로. 절반 이하로 줄거나 칠 것이 없으면 물러나고,
+ * 기준치를 올린 뒤 잠시 모은다 (물러나자마자 다시 나오지 않게)
+ */
+function stepAttack(world: World, enemy: EnemyState, now: number): void {
+  const alive = new Set(world.units.filter((u) => u.hp > 0).map((u) => u.id));
+  enemy.attackers = enemy.attackers.filter((id) => alive.has(id));
+  const target = attackTarget(world, enemy.plan.rally);
+  if (enemy.attackers.length <= enemy.attackSize * ENEMY.retreatRatio || !target) {
+    commandMove(world, enemy.attackers, enemy.plan.rally);
+    enemy.attackers = [];
+    enemy.attackSize = 0;
+    enemy.threshold += ENEMY.thresholdStep;
+    enemy.nextAttackAt = now + ENEMY.regroupSeconds;
+    return;
+  }
+  const idle = enemy.attackers.filter((id) => {
+    const u = world.units.find((x) => x.id === id);
+    return u !== undefined && u.order.type === 'idle' && u.engageId === null;
+  });
+  if (idle.length > 0) commandAttackMove(world, idle, target);
+}
+
+/** 내 유닛이 적 건물 곁에 오면 쉬는 병력이 그쪽으로. 보냈으면 true */
+function defend(world: World, army: readonly Unit[]): boolean {
+  const mine = world.units.filter((u) => u.owner === 'player' && u.hp > 0);
+  const intruder = mine.find((u) => enemyBuildings(world).some((b) => distanceToBuilding(b, u.x, u.y) <= DEFEND_RADIUS));
+  if (!intruder) return false;
+  const idle = army.filter((u) => u.order.type !== 'attackMove' && u.engageId === null);
+  if (idle.length > 0) commandAttackMove(world, idle.map((u) => u.id), { x: Math.round(intruder.x), y: Math.round(intruder.y) });
+  return true;
+}
+
+/** 공격할 곳: 집결지에서 가장 가까운 내 건물, 건물이 없으면 지휘관 */
+function attackTarget(world: World, from: Point): Point | undefined {
+  const mine = world.buildings
+    .filter((b) => b.owner === 'player')
+    .sort((a, b) => distanceToBuilding(a, from.x, from.y) - distanceToBuilding(b, from.x, from.y))[0];
+  if (mine) return { x: mine.x, y: mine.y };
+  const c = commanderOf(world);
+  return c && c.hp > 0 ? { x: Math.round(c.x), y: Math.round(c.y) } : undefined;
+}

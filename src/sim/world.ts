@@ -3,6 +3,7 @@ import { TICKS_PER_SECOND, TICK_SECONDS } from '../data/constants.ts';
 import { UNITS } from '../data/units.ts';
 import { COMMANDER, START } from '../data/commander.ts';
 import { WAVES } from '../data/monsters.ts';
+import { ENEMY } from '../data/enemy.ts';
 import {
   createCommander,
   createCreature,
@@ -10,6 +11,7 @@ import {
   type Building,
   type Creature,
   type NodeKind,
+  type Owner,
   type ResourceNode,
   type Unit,
 } from './entities.ts';
@@ -25,6 +27,8 @@ import { stepSelfBuild } from './systems/construction.ts';
 import { stepFeeders, stepHealing } from './systems/support.ts';
 import { stepHunger } from './systems/hunger.ts';
 import { stepUnits } from './systems/units.ts';
+import { setupEnemy, stepEnemyAi } from './ai/enemyAi.ts';
+import type { EnemyPlan } from '../maps/map3.ts';
 
 export type Outcome = 'playing' | 'defeat' | 'victory';
 
@@ -35,6 +39,8 @@ export interface Feeder {
   active: boolean;
   /** 괴물이 근처에 있어 막힘 (5단계) */
   blocked: boolean;
+  /** 켠 쪽. 나와 적이 같이 켜면 더 가까운 건물을 가진 쪽 (2026-11-25 사용자 확정). 꺼졌으면 null */
+  owner: Owner | null;
 }
 
 export interface Stock {
@@ -64,7 +70,38 @@ export interface Stats {
   unitsLost: number;
   /** 부서진 내 건물 수 */
   buildingsLost: number;
+  /** 잡은 적 유닛 수 (섬멸형) */
+  enemyUnitsKilled: number;
+  /** 부순 적 건물 수 (섬멸형) */
+  enemyBuildingsDestroyed: number;
+  /** 적에게 빼앗긴 식량 (약탈) */
+  foodStolen: number;
 }
+
+/** 거울 적 (섬멸형). 머리(ai/enemyAi.ts)가 쓰는 상태 */
+export interface EnemyState {
+  readonly plan: EnemyPlan;
+  readonly stock: Stock;
+  /** 다음에 생각하는 시각 (초) */
+  nextThinkAt: number;
+  /** 건설 순서에서 다음 차례 */
+  buildIndex: number;
+  /** 지금 차례를 짓기 시작하려고 기다린 시각 (오래 못 지으면 건너뜀) */
+  stepWaitSince: number | null;
+  /** 공격 기준치 (병력 보급) */
+  threshold: number;
+  /** 공격 중이면 출발할 때 병력 수, 아니면 0 */
+  attackSize: number;
+  /** 지금 공격에 나간 유닛 id (비었으면 모으는 중) */
+  attackers: number[];
+  /** 이 시각부터 공격을 보낼 수 있다 (첫 공격 시각, 물러난 뒤에는 다시 모으는 시간) */
+  nextAttackAt: number;
+  /** 보낸 공격 수 */
+  attacksLaunched: number;
+}
+
+/** 판의 목표: 생존형(시간 버티기) / 섬멸형(적 건물 전부 부수기) */
+export type Objective = 'survive' | 'annihilate';
 
 /** 괴물 입구 방향 (map.features.entrances 의 키) */
 export type Direction = 'north' | 'east';
@@ -98,6 +135,14 @@ export interface Shot {
   readonly melee: boolean;
 }
 
+/** 약탈 (화면에 잠깐 "-N" 을 띄움) */
+export interface Raid {
+  readonly x: number;
+  readonly y: number;
+  readonly amount: number;
+  readonly tick: number;
+}
+
 /**
  * 한 판의 전체 상태.
  * 규칙은 틱마다 이 객체를 직접 고친다 (유닛 수백 기를 매 틱 복사하지 않기 위해).
@@ -122,10 +167,15 @@ export interface World {
   /** 튜토리얼 동안 켜짐: 짓기·채집이 빨라진다 (data/tutorial.ts). 튜토리얼이 끝나면 화면 쪽이 끈다 */
   tutorialRules: boolean;
   readonly waves: WaveState;
+  readonly objective: Objective;
+  /** 거울 적. 생존형 맵에서는 null */
+  readonly enemy: EnemyState | null;
   /** 시드 고정 난수 상태 (random.ts) */
   rngState: number;
   /** 최근 몇 틱의 공격 (화면 효과용) */
   shots: Shot[];
+  /** 최근 몇 초의 약탈 (화면 효과용) */
+  raids: Raid[];
   /** 이 판에서 사령부를 한 번이라도 놓았는지 (첫 사령부만 혼자 빨리 지어짐) */
   commandCenterPlaced: boolean;
   /** 자원·건물이 막고 있는 칸 (tileIndex). 지형 절벽은 map.grid 가 따로 막음 */
@@ -140,7 +190,7 @@ function addNodes(world: World, kind: NodeKind, points: readonly Point[]): void 
   }
 }
 
-export function createWorld(map: MapDef, seed = 1): World {
+export function createWorld(map: MapDef, seed = 1, enemyPlan: EnemyPlan | null = null): World {
   const commander = createCommander(1, map.features.start);
   const world: World = {
     tick: 0,
@@ -149,7 +199,7 @@ export function createWorld(map: MapDef, seed = 1): World {
     creatures: [],
     nodes: [],
     buildings: [],
-    feeders: map.features.feeders.map((p) => ({ x: p.x, y: p.y, active: false, blocked: false })),
+    feeders: map.features.feeders.map((p) => ({ x: p.x, y: p.y, active: false, blocked: false, owner: null })),
     stock: { mineral: START.mineral, food: START.food },
     stats: {
       mineralMined: 0,
@@ -162,6 +212,9 @@ export function createWorld(map: MapDef, seed = 1): World {
       grazersHunted: 0,
       unitsLost: 0,
       buildingsLost: 0,
+      enemyUnitsKilled: 0,
+      enemyBuildingsDestroyed: 0,
+      foodStolen: 0,
     },
     foodCap: START.pocketFoodCap,
     satiety: COMMANDER.maxSatiety,
@@ -169,8 +222,11 @@ export function createWorld(map: MapDef, seed = 1): World {
     outcome: 'playing',
     tutorialRules: false,
     waves: { enabled: false, number: 1, nextAt: WAVES.firstSeconds, lastAt: 0, direction: 'north', surviveSeconds: null, retreatAt: null },
+    objective: enemyPlan ? 'annihilate' : 'survive',
+    enemy: enemyPlan ? createEnemyState(enemyPlan) : null,
     rngState: seed,
     shots: [],
+    raids: [],
     commandCenterPlaced: false,
     occupied: new Set(map.features.feeders.map((p) => tileIndex(map.grid, p.x, p.y))),
     nextId: 2,
@@ -179,8 +235,32 @@ export function createWorld(map: MapDef, seed = 1): World {
   addNodes(world, 'berry', map.features.berries);
   addNodes(world, 'debris', map.features.debris);
   for (const p of map.features.hunts) world.creatures.push(createCreature(world.nextId++, 'grazer', p));
-  world.waves.direction = pickOne(world, entranceDirections(world));
+  const directions = entranceDirections(world);
+  if (directions.length > 0) world.waves.direction = pickOne(world, directions);
+  if (enemyPlan) setupEnemy(world, enemyPlan);
   return world;
+}
+
+function createEnemyState(plan: EnemyPlan): EnemyState {
+  return {
+    plan,
+    stock: { mineral: ENEMY.startMineral, food: 0 },
+    nextThinkAt: 0,
+    buildIndex: 0,
+    stepWaitSince: null,
+    threshold: ENEMY.firstThreshold,
+    attackSize: 0,
+    attackers: [],
+    nextAttackAt: ENEMY.firstAttackSeconds,
+    attacksLaunched: 0,
+  };
+}
+
+/** 그 편의 자원 (내 것은 world.stock) */
+export function stockOf(world: World, owner: Owner): Stock {
+  if (owner === 'player') return world.stock;
+  if (!world.enemy) throw new Error('적이 없는 판');
+  return world.enemy.stock;
 }
 
 /** 이 지도에 괴물 입구가 있는 방향 */
@@ -216,6 +296,20 @@ export function creatureAt(world: World, x: number, y: number): Creature | undef
   return best;
 }
 
+/** 이 칸 위(반 칸 안)에 있는 그 편 유닛 중 가장 가까운 것 */
+export function unitAt(world: World, x: number, y: number, owner: Owner): Unit | undefined {
+  let best: Unit | undefined;
+  let bestD = 0.75;
+  for (const u of world.units) {
+    const d = Math.hypot(u.x - x, u.y - y);
+    if (u.hp > 0 && u.owner === owner && d < bestD) {
+      best = u;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
 export function commanderOf(world: World): Unit | undefined {
   return findUnit(world, world.commanderId);
 }
@@ -226,8 +320,11 @@ export function nodeAt(world: World, x: number, y: number): ResourceNode | undef
 }
 
 /** 보급(인구 상한): 다 지은 건물이 주는 보급의 합, 최대 200 */
-export function supplyCap(world: World): number {
-  const total = world.buildings.reduce((sum, b) => sum + (b.complete ? (BUILDINGS[b.kind].supply ?? 0) : 0), 0);
+export function supplyCap(world: World, owner: Owner = 'player'): number {
+  const total = world.buildings.reduce(
+    (sum, b) => sum + (b.complete && b.owner === owner ? (BUILDINGS[b.kind].supply ?? 0) : 0),
+    0,
+  );
   return Math.min(SUPPLY_MAX, total);
 }
 
@@ -235,10 +332,13 @@ export function supplyCap(world: World): number {
  * 쓰는 보급: 살아 있는 생산 유닛 + 건물에서 만들기 시작한 유닛 (스타처럼 시작할 때 보급을 차지).
  * 지휘관은 보급을 쓰지 않는다
  */
-export function supplyUsed(world: World): number {
-  const units = world.units.reduce((sum, u) => sum + (u.kind !== 'commander' && u.hp > 0 ? UNITS[u.kind].supply : 0), 0);
+export function supplyUsed(world: World, owner: Owner = 'player'): number {
+  const units = world.units.reduce(
+    (sum, u) => sum + (u.kind !== 'commander' && u.hp > 0 && u.owner === owner ? UNITS[u.kind].supply : 0),
+    0,
+  );
   const training = world.buildings.reduce(
-    (sum, b) => sum + (b.trainStarted && b.trainQueue[0] ? UNITS[b.trainQueue[0]].supply : 0),
+    (sum, b) => sum + (b.owner === owner && b.trainStarted && b.trainQueue[0] ? UNITS[b.trainQueue[0]].supply : 0),
     0,
   );
   return units + training;
@@ -277,6 +377,7 @@ export function stepWorld(world: World): void {
   if (world.outcome !== 'playing') return;
   world.tick += 1;
   const now = elapsedSeconds(world);
+  if (world.enemy) stepEnemyAi(world, now);
   stepProduction(world, TICK_SECONDS);
   stepSelfBuild(world, TICK_SECONDS);
   stepUnits(world, TICK_SECONDS, now);
@@ -292,7 +393,11 @@ export function stepWorld(world: World): void {
   stepHunger(world, TICK_SECONDS);
   // 화면 효과는 0.2초만 남긴다
   if (world.shots.length > 0) world.shots = world.shots.filter((s) => world.tick - s.tick < 4);
+  if (world.raids.length > 0) world.raids = world.raids.filter((r) => world.tick - r.tick < RAID_SHOW_TICKS);
 }
+
+/** 약탈 표시를 남기는 틱 (3초) */
+export const RAID_SHOW_TICKS = 3 * TICKS_PER_SECOND;
 
 export function elapsedSeconds(world: World): number {
   return world.tick / TICKS_PER_SECOND;

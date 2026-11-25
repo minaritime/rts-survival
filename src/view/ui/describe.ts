@@ -37,7 +37,7 @@ export function describeOrder(world: World, unit: Unit): string {
     return going ? `${name} 지으러 가는 중` : `${name} 짓는 중 ${Math.floor(b.progress * 100)}%`;
   }
   const node = world.nodes.find((n) => n.id === order.nodeId);
-  if (unit.carry > 0) return '미네랄 나르는 중';
+  if (unit.carry > 0) return unit.carryKind === 'food' ? '열매 나르는 중' : '미네랄 나르는 중';
   switch (node?.kind) {
     case 'mineral':
       return going ? '미네랄 캐러 가는 중' : '미네랄 캐는 중';
@@ -107,7 +107,9 @@ export function describeTile(world: World, tile: Point): SelectionText | null {
   const at = (list: readonly Point[]): boolean => list.some((p) => p.x === tile.x && p.y === tile.y);
   const feeder = world.feeders.find((x) => x.x === tile.x && x.y === tile.y);
   if (feeder) {
-    const status = !feeder.active
+    const status = feeder.owner === 'enemy'
+      ? `적이 차지함: 적 건물이 더 가깝습니다. 더 가까이 짓거나 적 건물을 부수면 빼앗을 수 있습니다`
+      : !feeder.active
       ? `꺼짐: ${FEEDER.activateRadius}칸 안에 건물을 지으면 켜집니다`
       : feeder.blocked
         ? `막힘: ${FEEDER.blockRadius}칸 안에 괴물이 있어 식량이 안 나옵니다`
@@ -142,7 +144,10 @@ export function describeSelection(world: World, selected: ReadonlySet<number>): 
   if (count > 1) {
     // 여럿: 종류별 개수 ("일꾼 3, 소총병 2")
     const counts = new Map<string, number>();
-    for (const u of units) counts.set(unitName(u.kind), (counts.get(unitName(u.kind)) ?? 0) + 1);
+    for (const u of units) {
+      const name = u.owner === 'enemy' ? `적 ${unitName(u.kind)}` : unitName(u.kind);
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
     for (const b of buildings) counts.set(BUILDINGS[b.kind].name, (counts.get(BUILDINGS[b.kind].name) ?? 0) + 1);
     for (const n of nodes) counts.set(describeNode(world, n).title, (counts.get(describeNode(world, n).title) ?? 0) + 1);
     for (const c of creatures) counts.set(CREATURES[c.kind].name, (counts.get(CREATURES[c.kind].name) ?? 0) + 1);
@@ -154,10 +159,11 @@ export function describeSelection(world: World, selected: ReadonlySet<number>): 
 
   const unit = units[0];
   if (unit) {
-    return { title: unitName(unit.kind), status: describeOrder(world, unit) };
+    const title = unit.owner === 'enemy' ? `적 ${unitName(unit.kind)}` : unitName(unit.kind);
+    return { title, status: describeOrder(world, unit) };
   }
   const b = buildings[0]!;
-  const name = BUILDINGS[b.kind].name;
+  const name = b.owner === 'enemy' ? `적 ${BUILDINGS[b.kind].name}` : BUILDINGS[b.kind].name;
   const state = b.complete
     ? (describeProduction(world, b) ?? buildingRole(b.kind))
     : `짓는 중 ${Math.floor(b.progress * 100)}%`;

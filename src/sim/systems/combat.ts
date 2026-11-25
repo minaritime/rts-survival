@@ -2,10 +2,11 @@ import { BUILDINGS } from '../../data/buildings.ts';
 import { UNITS } from '../../data/units.ts';
 import { START } from '../../data/commander.ts';
 import { AUTO_ACQUIRE_EXTRA, BUILDING_ATTACK, LEASH_EXTRA, RANGE_SLACK, UNIT_ATTACK, type AttackSpec } from '../../data/combat.ts';
-import { createNode, goIdle, isMonster, unitTile, type Building, type Creature, type Unit } from '../entities.ts';
+import { RAID } from '../../data/enemy.ts';
+import { createNode, goIdle, isMonster, unitTile, type Building, type Creature, type Owner, type Unit } from '../entities.ts';
 import { tileIndex, type Point } from '../grid.ts';
 import { pathToward } from '../navigation.ts';
-import { findCreature, isWalkable, removeBuilding, type World } from '../world.ts';
+import { findCreature, findUnit, isWalkable, removeBuilding, stockOf, type World } from '../world.ts';
 
 /**
  * 전투 (기획.md 3·5·6장 수치, data/combat.ts).
@@ -38,14 +39,33 @@ function liveMonsters(world: World): Creature[] {
   return world.creatures.filter((c) => c.hp > 0 && isMonster(c) && !c.retreating);
 }
 
+/** 움직이는 싸움 상대: 괴물 또는 다른 편 유닛 */
+type Mobile = Creature | Unit;
+
+/** 이 편이 싸울 움직이는 상대: 괴물(물러가는 것 빼고) + 다른 편 유닛 */
+function hostileMobiles(world: World, owner: Owner): Mobile[] {
+  const foes: Mobile[] = liveMonsters(world);
+  for (const u of world.units) if (u.hp > 0 && u.owner !== owner) foes.push(u);
+  return foes;
+}
+
 /** 길이 없던 상대를 다시 노려 보기까지 (초) */
 const UNREACHABLE_SECONDS = 3;
 
-/** 이 거리 안에서 가장 가까운 괴물 (skipId 는 뺌) */
-function nearestMonster(world: World, x: number, y: number, within: number, skipId: number | null = null): Creature | undefined {
-  let best: Creature | undefined;
+/**
+ * 이 거리 안에서 가장 가까운 상대 (skipId 는 뺌). 움직이는 상대를 먼저, 없으면 다른 편 건물 (스타처럼 싸우는 것부터).
+ */
+function nearestFoe(
+  world: World,
+  owner: Owner,
+  x: number,
+  y: number,
+  within: number,
+  skipId: number | null = null,
+): Mobile | Building | undefined {
+  let best: Mobile | Building | undefined;
   let bestD = within;
-  for (const c of liveMonsters(world)) {
+  for (const c of hostileMobiles(world, owner)) {
     if (c.id === skipId) continue;
     const d = Math.hypot(c.x - x, c.y - y);
     if (d <= bestD) {
@@ -53,14 +73,32 @@ function nearestMonster(world: World, x: number, y: number, within: number, skip
       bestD = d;
     }
   }
+  if (best) return best;
+  for (const b of world.buildings) {
+    if (b.owner === owner || b.hp <= 0 || b.id === skipId) continue;
+    const d = distanceToBuilding(b, x, y);
+    if (d <= bestD) {
+      best = b;
+      bestD = d;
+    }
+  }
   return best;
+}
+
+/** id 로 싸움 상대 찾기: 괴물·사냥감, 유닛, 건물 (id 는 판 전체에서 하나뿐) */
+export function findTarget(world: World, id: number): Mobile | Building | undefined {
+  return findCreature(world, id) ?? findUnit(world, id) ?? world.buildings.find((b) => b.id === id);
+}
+
+function isBuilding(t: Mobile | Building): t is Building {
+  return 'width' in t;
 }
 
 /**
  * 상대에게 다가가 사거리 안이면 쏜다.
  * 쫓아갈 길이 없으면 false (상대를 놓아 줌).
  */
-function engage(world: World, unit: Unit, target: Creature): boolean {
+function engage(world: World, unit: Unit, target: Mobile): boolean {
   const spec = UNIT_ATTACK[unit.kind];
   const d = Math.hypot(target.x - unit.x, target.y - unit.y);
   if (withinRange(spec, d)) {
@@ -86,16 +124,18 @@ function engage(world: World, unit: Unit, target: Creature): boolean {
   return true;
 }
 
-/** 공격 명령: 정한 상대가 죽거나 사라지면 선다 */
+/** 상대가 건물이면 곁으로, 움직이는 것이면 쫓아가 친다. 갈 길이 없으면 false */
+function engageAny(world: World, unit: Unit, target: Mobile | Building): boolean {
+  return isBuilding(target) ? engageBuilding(world, unit, target) : engage(world, unit, target);
+}
+
+/**
+ * 공격 명령: 정한 상대가 죽거나 사라지면 선다.
+ * 내 건물도 될 수 있다 (강제 공격: 스타처럼 A 다음 내 건물을 누르면 부순다. 길을 트거나 자리를 비울 때)
+ */
 export function stepAttackOrder(world: World, unit: Unit, targetId: number): void {
-  const target = findCreature(world, targetId);
-  if (target) {
-    if (target.hp <= 0 || !engage(world, unit, target)) goIdle(unit);
-    return;
-  }
-  // 강제 공격: 내 건물 (스타처럼 A 다음 내 건물을 누르면 부순다. 길을 트거나 자리를 비울 때)
-  const building = world.buildings.find((b) => b.id === targetId);
-  if (!building || building.hp <= 0 || !engageBuilding(world, unit, building)) goIdle(unit);
+  const target = findTarget(world, targetId);
+  if (!target || target.hp <= 0 || target === unit || !engageAny(world, unit, target)) goIdle(unit);
 }
 
 /** 건물 곁(사거리 안)으로 가서 친다. 갈 길이 없으면 false */
@@ -116,13 +156,18 @@ function engageBuilding(world: World, unit: Unit, b: Building): boolean {
   return true;
 }
 
+function distanceTo(unit: Unit, target: Mobile | Building): number {
+  return isBuilding(target) ? distanceToBuilding(target, unit.x, unit.y) : Math.hypot(target.x - unit.x, target.y - unit.y);
+}
+
 /** 스스로 붙은 싸움: 상대가 사라졌거나 너무 멀어지면 놓아 준다. 계속 싸우면 true */
 function keepEngaged(world: World, unit: Unit): boolean {
   if (unit.engageId === null) return false;
-  const target = findCreature(world, unit.engageId);
+  const target = findTarget(world, unit.engageId);
   const spec = UNIT_ATTACK[unit.kind];
-  const tooFar = target ? Math.hypot(target.x - unit.x, target.y - unit.y) > spec.range + LEASH_EXTRA : true;
-  if (!target || target.hp <= 0 || target.retreating || tooFar || !engage(world, unit, target)) {
+  const retreating = target !== undefined && 'retreating' in target && target.retreating;
+  const tooFar = !target || distanceTo(unit, target) > spec.range + LEASH_EXTRA;
+  if (!target || target.hp <= 0 || retreating || tooFar || !engageAny(world, unit, target)) {
     unit.engageId = null;
     unit.path = [];
     return false;
@@ -130,11 +175,11 @@ function keepEngaged(world: World, unit: Unit): boolean {
   return true;
 }
 
-/** 사거리 + 2 안의 괴물을 알아챈다 */
+/** 사거리 + 2 안의 상대(괴물·다른 편)를 알아챈다 */
 function acquire(world: World, unit: Unit): boolean {
   const spec = UNIT_ATTACK[unit.kind];
   const skip = world.tick < unit.unreachableUntil ? unit.unreachableId : null;
-  const found = nearestMonster(world, unit.x, unit.y, spec.range + AUTO_ACQUIRE_EXTRA, skip);
+  const found = nearestFoe(world, unit.owner, unit.x, unit.y, spec.range + AUTO_ACQUIRE_EXTRA, skip);
   if (!found) return false;
   unit.engageId = found.id;
   return keepEngaged(world, unit);
@@ -160,16 +205,16 @@ export function stepAttackMove(world: World, unit: Unit, target: Point): void {
   else unit.path = path;
 }
 
-/** 포탑: 사거리 안 가장 가까운 괴물을 쏜다 */
+/** 포탑: 사거리 안 가장 가까운 상대(괴물·다른 편 유닛)를 쏜다 */
 export function stepTurrets(world: World, dt: number): void {
   for (const b of world.buildings) {
     const spec = BUILDING_ATTACK[b.kind];
     if (!spec || !b.complete) continue;
     b.cooldown = Math.max(0, b.cooldown - dt);
     if (b.cooldown > 0) continue;
-    let best: Creature | undefined;
+    let best: Mobile | undefined;
     let bestD = Infinity;
-    for (const c of liveMonsters(world)) {
+    for (const c of hostileMobiles(world, b.owner)) {
       const d = distanceToBuilding(b, c.x, c.y);
       if (withinRange(spec, d) && d < bestD) {
         best = c;
@@ -182,9 +227,9 @@ export function stepTurrets(world: World, dt: number): void {
   }
 }
 
-/** 식량 한도 다시 셈: 사령부 전 주머니 30, 다 지은 건물이 주는 한도 중 가장 큰 것 */
+/** 식량 한도 다시 셈: 사령부 전 주머니 30, 다 지은 내 건물이 주는 한도 중 가장 큰 것 */
 export function recomputeFoodCap(world: World): void {
-  const caps = world.buildings.filter((b) => b.complete).map((b) => BUILDINGS[b.kind].foodCap ?? 0);
+  const caps = world.buildings.filter((b) => b.complete && b.owner === 'player').map((b) => BUILDINGS[b.kind].foodCap ?? 0);
   world.foodCap = Math.max(START.pocketFoodCap, ...caps);
   world.stock.food = Math.min(world.stock.food, world.foodCap);
 }
@@ -207,6 +252,22 @@ function dropMeat(world: World, at: Point): void {
   }
 }
 
+/**
+ * 약탈 (2026-11-25 사용자 확정: 건물을 부수면 한 번에): 식량 한도를 주는 내 건물이 부서질 때
+ * 곁에 적 유닛이 있으면 내 저장 식량의 절반을 빼앗아 간다. 적은 그 식량을 쓰지 않는다 (내 수급을 끊는 것이 목적)
+ */
+function raid(world: World, b: Building): void {
+  if (!world.enemy || BUILDINGS[b.kind].foodCap === undefined) return;
+  const near = world.units.some((u) => u.owner === 'enemy' && u.hp > 0 && distanceToBuilding(b, u.x, u.y) <= RAID.radius);
+  if (!near) return;
+  const amount = Math.floor(world.stock.food * RAID.stealRatio);
+  if (amount <= 0) return;
+  world.stock.food -= amount;
+  world.enemy.stock.food += amount;
+  world.stats.foodStolen += amount;
+  world.raids.push({ x: b.x + (b.width - 1) / 2, y: b.y + (b.height - 1) / 2, amount, tick: world.tick });
+}
+
 /** 체력이 0 이 된 것을 치운다. 지휘관이면 패배 */
 export function removeDead(world: World): void {
   for (let i = world.units.length - 1; i >= 0; i--) {
@@ -218,17 +279,24 @@ export function removeDead(world: World): void {
       continue;
     }
     world.units.splice(i, 1);
-    world.stats.unitsLost += 1;
+    if (u.owner === 'player') world.stats.unitsLost += 1;
+    else world.stats.enemyUnitsKilled += 1;
   }
   let lostBuilding = false;
   for (const b of [...world.buildings]) {
     if (b.hp > 0) continue;
-    for (const kind of b.trainQueue) world.stock.mineral += UNITS[kind].mineral;
+    for (const kind of b.trainQueue) stockOf(world, b.owner).mineral += UNITS[kind].mineral;
+    if (b.owner === 'player') raid(world, b);
     removeBuilding(world, b);
-    world.stats.buildingsLost += 1;
-    lostBuilding = true;
+    if (b.owner === 'player') {
+      world.stats.buildingsLost += 1;
+      lostBuilding = true;
+    } else world.stats.enemyBuildingsDestroyed += 1;
   }
   if (lostBuilding) recomputeFoodCap(world);
+  if (world.objective === 'annihilate' && world.outcome === 'playing' && !world.buildings.some((b) => b.owner === 'enemy')) {
+    world.outcome = 'victory';
+  }
   for (let i = world.creatures.length - 1; i >= 0; i--) {
     const c = world.creatures[i]!;
     if (c.hp > 0) continue;

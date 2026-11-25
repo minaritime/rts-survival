@@ -5,6 +5,9 @@ import { BERRY, DEBRIS } from '../data/resources.ts';
 import { UNITS, type TrainableKind, type UnitKind } from '../data/units.ts';
 import type { Point } from './grid.ts';
 
+/** 누구 것인지: 나 / 거울 적 (섬멸형, 기획.md 8-2) */
+export type Owner = 'player' | 'enemy';
+
 /** 유닛이 지금 하라고 받은 일 */
 export type Order =
   | { readonly type: 'idle' }
@@ -25,6 +28,7 @@ export type Order =
 export interface Building {
   readonly id: number;
   readonly kind: BuildingKind;
+  readonly owner: Owner;
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -53,11 +57,12 @@ export type Rally = { readonly kind: 'point'; readonly x: number; readonly y: nu
 /** 지을 때 체력은 10% 에서 시작해 진행률만큼 찬다 (스타식) */
 export const BUILD_START_HP_RATIO = 0.1;
 
-export function createBuilding(id: number, kind: BuildingKind, at: Point, selfBuild = false): Building {
+export function createBuilding(id: number, kind: BuildingKind, at: Point, selfBuild = false, owner: Owner = 'player'): Building {
   const spec = BUILDINGS[kind];
   return {
     id,
     kind,
+    owner,
     x: at.x,
     y: at.y,
     width: spec.width,
@@ -84,6 +89,7 @@ export type { UnitKind } from '../data/units.ts';
 export interface Unit {
   readonly id: number;
   readonly kind: UnitKind;
+  readonly owner: Owner;
   x: number;
   y: number;
   prevX: number;
@@ -97,8 +103,10 @@ export interface Unit {
   workSeconds: number;
   /** Shift 로 줄 세운 짓기 (건물 id). 지금 짓는 것이 끝나면 차례로 */
   buildQueue: number[];
-  /** 일꾼이 들고 있는 미네랄 (사령부에 내려놓으면 0) */
+  /** 일꾼이 들고 있는 양 (사령부에 내려놓으면 0) */
   carry: number;
+  /** 들고 있는 것: 미네랄, 또는 적 일꾼이 덤불에서 딴 식량 */
+  carryKind: 'mineral' | 'food';
   /** 다시 쏘기까지 남은 초 */
   cooldown: number;
   /**
@@ -128,10 +136,11 @@ export interface ResourceNode {
   regrowAt: number | null;
 }
 
-function createUnitWith(id: number, kind: UnitKind, at: Point, maxHp: number): Unit {
+function createUnitWith(id: number, kind: UnitKind, at: Point, maxHp: number, owner: Owner = 'player'): Unit {
   return {
     id,
     kind,
+    owner,
     x: at.x,
     y: at.y,
     prevX: at.x,
@@ -143,6 +152,7 @@ function createUnitWith(id: number, kind: UnitKind, at: Point, maxHp: number): U
     workSeconds: 0,
     buildQueue: [],
     carry: 0,
+    carryKind: 'mineral',
     cooldown: 0,
     engageId: null,
     unreachableId: null,
@@ -155,8 +165,8 @@ export function createCommander(id: number, at: Point): Unit {
 }
 
 /** 건물에서 뽑은 유닛 */
-export function createTrainedUnit(id: number, kind: TrainableKind, at: Point): Unit {
-  return createUnitWith(id, kind, at, UNITS[kind].maxHp);
+export function createTrainedUnit(id: number, kind: TrainableKind, at: Point, owner: Owner = 'player'): Unit {
+  return createUnitWith(id, kind, at, UNITS[kind].maxHp, owner);
 }
 
 /** 건물을 지을 수 있는 유닛 */
@@ -164,9 +174,14 @@ export function canBuild(unit: Unit): boolean {
   return unit.kind === 'commander' || unit.kind === 'worker';
 }
 
-/** 이 자원을 캘 수 있는지: 지휘관은 손으로 전부, 일꾼은 미네랄만(사령부로 나름), 전투 유닛은 못 캠 */
+/**
+ * 이 자원을 캘 수 있는지: 지휘관은 손으로 전부, 일꾼은 미네랄만(사령부로 나름), 전투 유닛은 못 캠.
+ * 적 일꾼은 열매도 따서 나른다 (기획.md 8-3: 적은 내 식량 수급을 방해하려고 덤불을 비운다)
+ */
 export function canGather(unit: Unit, kind: NodeKind): boolean {
-  return unit.kind === 'commander' || (unit.kind === 'worker' && kind === 'mineral');
+  if (unit.kind === 'commander') return true;
+  if (unit.kind !== 'worker') return false;
+  return kind === 'mineral' || (kind === 'berry' && unit.owner === 'enemy');
 }
 
 /**

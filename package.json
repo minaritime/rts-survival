@@ -13,6 +13,7 @@
     "shot": "node scripts/screenshot.mjs",
     "art:sprites": "node art/tools/run-blender.mjs art/blender/render_sprites.py art/out/frames && node art/tools/pack-sprites.mjs && node art/tools/make-icons.mjs",
     "art:terrain": "node art/tools/run-blender.mjs art/blender/render_terrain.py src/maps/map1.ts public/assets/terrain/map1.jpg 24",
+    "art:terrain3": "node art/tools/run-blender.mjs art/blender/render_terrain.py src/maps/map3.ts public/assets/terrain/map3.jpg 24",
     "art": "npm run art:sprites && npm run art:terrain",
     "art:icons": "node art/tools/make-icons.mjs"
   },

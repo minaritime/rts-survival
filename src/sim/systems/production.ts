@@ -54,16 +54,16 @@ export function stepProduction(world: World, dt: number): void {
     const kind = b.trainQueue[0];
     if (!b.complete || !kind) continue;
     if (!b.trainStarted) {
-      if (supplyUsed(world) + UNITS[kind].supply > supplyCap(world)) continue;
+      if (supplyUsed(world, b.owner) + UNITS[kind].supply > supplyCap(world, b.owner)) continue;
       b.trainStarted = true;
     }
     const seconds = world.tutorialRules ? TUTORIAL_RULES.trainSeconds : UNITS[kind].trainSeconds;
     b.trainProgress = Math.min(1, b.trainProgress + dt / seconds);
     if (b.trainProgress < 1 - 1e-9) continue;
 
-    const unit = createTrainedUnit(world.nextId++, kind, spawnTile(world, b));
+    const unit = createTrainedUnit(world.nextId++, kind, spawnTile(world, b), b.owner);
     world.units.push(unit);
-    world.stats.unitsTrained += 1;
+    if (b.owner === 'player') world.stats.unitsTrained += 1;
     b.trainQueue.shift();
     b.trainProgress = 0;
     b.trainStarted = false;
@@ -74,5 +74,10 @@ export function stepProduction(world: World, dt: number): void {
 /** 보급이 모자라 줄 맨 앞을 시작하지 못하고 있는지 (화면 표시용) */
 export function isSupplyBlocked(world: World, b: Building): boolean {
   const kind = b.trainQueue[0];
-  return b.complete && kind !== undefined && !b.trainStarted && supplyUsed(world) + UNITS[kind].supply > supplyCap(world);
+  return (
+    b.complete &&
+    kind !== undefined &&
+    !b.trainStarted &&
+    supplyUsed(world, b.owner) + UNITS[kind].supply > supplyCap(world, b.owner)
+  );
 }

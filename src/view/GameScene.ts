@@ -1,11 +1,13 @@
 import Phaser from 'phaser';
 import { MAX_TICKS_PER_FRAME, TICK_SECONDS, TILE_SIZE } from '../data/constants.ts';
 import { MAP1_ROWS } from '../maps/map1.ts';
+import { MAP3_ENEMY, MAP3_ROWS, type EnemyPlan } from '../maps/map3.ts';
 import { createStepper, type Stepper } from '../sim/fixedStep.ts';
 import { parseMap } from '../sim/mapLoader.ts';
 import { createWorld, stepWorld, type World } from '../sim/world.ts';
 import { startTutorial, stepTutorial, viewTutorial, type TutorialInput, type TutorialState } from '../tutorial/quests.ts';
-import { preloadAssets, TERRAIN_KEY } from './assets.ts';
+import { preloadAssets, TERRAIN_KEYS, type MapName } from './assets.ts';
+import { createEnemyHud, type EnemyHud } from './enemyHud.ts';
 import { createCameraControl, type CameraControl } from './cameraControl.ts';
 import { createCursor, type Cursor } from './cursor.ts';
 import { createHud, type Hud } from './ui/hud.ts';
@@ -27,8 +29,30 @@ import { createPings, type Pings } from './commandPings.ts';
 
 const cursorPoint = (c: Cursor): { x: number; y: number } => ({ x: c.x, y: c.y });
 
-/** tutorial: 1맵 튜토리얼 (빠른 규칙 + 목표 칸) / stage1: 같은 지도를 정상 규칙으로 */
-export type GameMode = 'tutorial' | 'stage1';
+/** tutorial: 1맵 튜토리얼 (빠른 규칙 + 목표 칸) / stage1: 같은 지도를 정상 규칙으로 / stage3: 협곡 섬멸형 (거울 적 기지) */
+export type GameMode = 'tutorial' | 'stage1' | 'stage3';
+
+interface ModeSpec {
+  readonly label: string;
+  readonly title: string;
+  readonly map: MapName;
+  readonly rows: readonly string[];
+  readonly enemy: EnemyPlan | null;
+}
+
+const MODES: Readonly<Record<GameMode, ModeSpec>> = {
+  tutorial: { label: '튜토리얼', title: '튜토리얼', map: 'map1', rows: MAP1_ROWS, enemy: null },
+  stage1: { label: '1 초원', title: '1스테이지 초원', map: 'map1', rows: MAP1_ROWS, enemy: null },
+  stage3: { label: '3 협곡', title: '3스테이지 협곡: 적 기지를 부수십시오', map: 'map3', rows: MAP3_ROWS, enemy: MAP3_ENEMY },
+};
+
+/** 주소의 ?stage=3 등으로 처음 판을 고른다 (화면 점검 스크립트도 씀) */
+function modeFromUrl(): GameMode | undefined {
+  const stage = new URLSearchParams(window.location.search).get('stage');
+  if (stage === '1') return 'stage1';
+  if (stage === '3') return 'stage3';
+  return undefined;
+}
 
 export class GameScene extends Phaser.Scene {
   private world!: World;
@@ -46,6 +70,7 @@ export class GameScene extends Phaser.Scene {
   private stageDialog!: StageDialog;
   private waveAlert!: WaveAlert;
   private resultDialog!: ResultDialog;
+  private enemyHud!: EnemyHud;
   /** 괴물 퇴각 번쩍임을 한 번만 */
   private flashedRetreat = false;
   private pings!: Pings;
@@ -64,7 +89,7 @@ export class GameScene extends Phaser.Scene {
 
   /** scene.restart({ mode }) 로 넘어온 값 */
   init(data: { mode?: GameMode }): void {
-    this.mode = data.mode ?? 'tutorial';
+    this.mode = data.mode ?? modeFromUrl() ?? 'tutorial';
   }
 
   preload(): void {
@@ -76,7 +101,8 @@ export class GameScene extends Phaser.Scene {
     this.cameraTravelTiles = 0;
     this.playMs = 0;
     this.flashedRetreat = false;
-    this.world = createWorld(parseMap(MAP1_ROWS));
+    const spec = MODES[this.mode];
+    this.world = createWorld(parseMap(spec.rows), 1, spec.enemy);
     // 튜토리얼: 끝날 때까지 짓기·채집·생산을 빠르게 (data/tutorial.ts). 1스테이지는 정상 규칙
     this.world.tutorialRules = this.mode === 'tutorial';
     // 괴물 공격은 1스테이지부터 (튜토리얼은 배우는 데만 집중)
@@ -90,7 +116,7 @@ export class GameScene extends Phaser.Scene {
     const worldHeight = grid.height * TILE_SIZE;
 
     // 지형은 Blender 로 지도 한 장을 통째로 찍은 그림 (art/blender/render_terrain.py)
-    this.add.image(0, 0, TERRAIN_KEY).setOrigin(0, 0).setDisplaySize(worldWidth, worldHeight).setDepth(DEPTH.terrain);
+    this.add.image(0, 0, TERRAIN_KEYS[spec.map]).setOrigin(0, 0).setDisplaySize(worldWidth, worldHeight).setDepth(DEPTH.terrain);
     this.groundOverlay = this.add.graphics().setDepth(DEPTH.groundOverlay);
     this.sprites = createSpriteLayer(this, this.world);
     this.topOverlay = this.add.graphics().setDepth(DEPTH.topOverlay);
@@ -150,7 +176,14 @@ export class GameScene extends Phaser.Scene {
     this.resultDialog = createResultDialog(this, this.minimap.camera, cursorAt, isRunning, () =>
       this.scene.restart({ mode: this.mode }),
     );
-    this.pauseMenu = createPauseMenu(this, this.cursor, this.minimap.camera, this.mode === 'tutorial' ? '튜토리얼' : '1스테이지 초원');
+    this.enemyHud = createEnemyHud(this, this.minimap.camera);
+    this.enemyHud.layout(this.scale.width, this.scale.height);
+    const stages = (Object.keys(MODES) as GameMode[]).map((m) => ({
+      label: MODES[m].label,
+      current: m === this.mode,
+      pick: () => this.scene.restart({ mode: m }),
+    }));
+    this.pauseMenu = createPauseMenu(this, this.cursor, this.minimap.camera, spec.title, stages);
     this.tutorial = startTutorial(this.tutorialInput());
     this.stageDialog = createStageDialog(this, this.minimap.camera, cursorAt, isRunning, () =>
       this.scene.restart({ mode: 'stage1' }),
@@ -180,6 +213,7 @@ export class GameScene extends Phaser.Scene {
     this.pings.draw(this.groundOverlay, performance.now());
     this.minimap.update(this.world, time);
     this.waveAlert.update(this.world, time);
+    this.enemyHud.update(this.world);
     this.resultDialog.update(this.world, cursorPoint(this.cursor));
     // 버텼다: 화면이 한 번 번쩍이고 괴물이 물러간다 (기획.md 4장)
     if (this.world.waves.retreatAt !== null && !this.flashedRetreat) {
@@ -234,6 +268,7 @@ export class GameScene extends Phaser.Scene {
     this.pauseMenu.layout(width, height);
     this.stageDialog.layout(width, height);
     this.waveAlert.layout(width, height);
+    this.enemyHud.layout(width, height);
     this.resultDialog.layout(width, height);
   }
 }

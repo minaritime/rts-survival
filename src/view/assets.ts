@@ -71,11 +71,13 @@ export const IMAGES = [
 export type ImageKey = (typeof IMAGES)[number];
 export type SheetKey = keyof typeof SHEETS;
 
-export const TERRAIN_KEY = 'terrain-map1';
+/** 지도마다 지형 그림 한 장 (art/blender/render_terrain.py) */
+export const TERRAIN_KEYS = { map1: 'terrain-map1', map3: 'terrain-map3' } as const;
+export type MapName = keyof typeof TERRAIN_KEYS;
 
 export function preloadAssets(scene: Phaser.Scene): void {
   const base = 'assets/';
-  scene.load.image(TERRAIN_KEY, `${base}terrain/map1.jpg`);
+  for (const [name, key] of Object.entries(TERRAIN_KEYS)) scene.load.image(key, `${base}terrain/${name}.jpg`);
   for (const key of IMAGES) scene.load.image(key, `${base}sprites/${key}.png`);
   for (const file of new Set(Object.values(ICON_FILES))) scene.load.image(`icon_${file}`, `${base}icons/${file}.png`);
   for (const key of Object.keys(SHEETS) as SheetKey[]) {

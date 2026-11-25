@@ -61,10 +61,18 @@ export function createMinimap(
       dots.fillStyle(0xff4d4f, 0.4 + 0.6 * Math.abs(Math.sin(timeMs / 250)));
       for (const g of world.map.features.entrances[warning.direction]) dots.fillRect((g.x - 1) * T, (g.y - 1) * T, 3 * T, 3 * T);
     }
-    dots.fillStyle(0x4096ff, 1);
-    for (const b of world.buildings) dots.fillRect(b.x * T, b.y * T, b.width * T, b.height * T);
-    dots.fillStyle(0x52c41a, 1);
-    for (const u of world.units) if (u.hp > 0) dots.fillRect((u.x - 0.6) * T, (u.y - 0.6) * T, 1.7 * T, 1.7 * T);
+    for (const b of world.buildings) {
+      dots.fillStyle(b.owner === 'enemy' ? 0xcf1322 : 0x4096ff, 1);
+      dots.fillRect(b.x * T, b.y * T, b.width * T, b.height * T);
+    }
+    for (const u of world.units) {
+      if (u.hp <= 0) continue;
+      dots.fillStyle(u.owner === 'enemy' ? 0xff7875 : 0x52c41a, 1);
+      dots.fillRect((u.x - 0.6) * T, (u.y - 0.6) * T, 1.7 * T, 1.7 * T);
+    }
+    // 적이 차지한 배급처
+    dots.fillStyle(0xff7875, 1);
+    for (const f of world.feeders) if (f.owner === 'enemy') dots.fillRect((f.x - 0.5) * T, (f.y - 0.5) * T, 2 * T, 2 * T);
     dots.fillStyle(0xff4d4f, 1);
     for (const c of world.creatures) {
       if (c.hp > 0 && isMonster(c)) dots.fillRect((c.x - 0.6) * T, (c.y - 0.6) * T, 1.7 * T, 1.7 * T);

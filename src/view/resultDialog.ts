@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { elapsedSeconds, formatClock, type World } from '../sim/world.ts';
 import { iconKey } from './assets.ts';
 import type { ScreenPoint } from './coords.ts';
-import { DEPTH } from './palette.ts';
+import { DEPTH, PALETTE } from './palette.ts';
 import { contains, type Rect } from './ui/layout.ts';
 import { COLOR, FONT, RADIUS, textStyle } from './ui/tokens.ts';
 import { makeFixer } from './ui/widgets.ts';
@@ -96,7 +96,13 @@ export function createResultDialog(
       const color = won ? GOLD : COLOR.dangerNum;
       title.setText(won ? '승리' : '패배').setColor(won ? '#ffd666' : COLOR.danger);
       stats[0]!.text.setText(formatClock(elapsedSeconds(world)));
-      stats[1]!.text.setText(String(world.stats.monstersKilled));
+      // 섬멸형: 잡은 괴물 대신 잡은 적 유닛 (붉은 소총병 그림)
+      const versus = world.objective === 'annihilate';
+      const killIcon = stats[1]!.icon!;
+      killIcon.setTexture(iconKey(versus ? 'rifleman' : 'swarm')).setDisplaySize(30, 30);
+      if (versus) killIcon.setTint(PALETTE.enemyTint);
+      else killIcon.clearTint();
+      stats[1]!.text.setText(String(versus ? world.stats.enemyUnitsKilled : world.stats.monstersKilled));
       stats[2]!.text.setText(String(world.stats.unitsLost));
       stats[3]!.text.setText(String(world.stats.buildingsLost));
       g.clear();

@@ -6,6 +6,7 @@ import { BUILDING_IMAGE } from './placement.ts';
 import type { World } from '../sim/world.ts';
 import { SHEETS, directionIndex, type ImageKey } from './assets.ts';
 import { tileToPx, unitScreenPos } from './coords.ts';
+import { PALETTE } from './palette.ts';
 
 /** 걷기 그림이 넘어가는 속도 (장/초) */
 const WALK_FPS = 8;
@@ -52,6 +53,9 @@ export function createSpriteLayer(scene: Phaser.Scene, world: World): SpriteLaye
       const key = f.active ? 'feeder_on' : 'feeder_off';
       const img = feederImages[i]!;
       if (img.texture.key !== key) img.setTexture(key);
+      // 적이 차지한 배급처는 붉게
+      if (f.owner === 'enemy') img.setTint(PALETTE.enemyTint);
+      else img.clearTint();
     });
   };
   const creatureSprites = new Map<number, Phaser.GameObjects.Sprite>();
@@ -87,7 +91,9 @@ export function createSpriteLayer(scene: Phaser.Scene, world: World): SpriteLaye
       if (!img) {
         const x = (b.x + b.width / 2) * TILE_SIZE;
         const y = (b.y + b.height / 2) * TILE_SIZE;
-        buildingImages.set(b.id, scene.add.image(x, y, key).setDepth((b.y + b.height) * TILE_SIZE - 1));
+        const img = scene.add.image(x, y, key).setDepth((b.y + b.height) * TILE_SIZE - 1);
+        if (b.owner === 'enemy') img.setTint(PALETTE.enemyTint);
+        buildingImages.set(b.id, img);
       } else if (img.texture.key !== key) {
         img.setTexture(key);
       }
@@ -105,7 +111,8 @@ export function createSpriteLayer(scene: Phaser.Scene, world: World): SpriteLaye
     const dy = unit.y - unit.prevY;
     let dir = facing.get(unit.id) ?? 2;
     const foeId = unit.order.type === 'attack' ? unit.order.targetId : unit.engageId;
-    const foe = foeId === null ? undefined : world.creatures.find((c) => c.id === foeId);
+    const foe =
+      foeId === null ? undefined : (world.creatures.find((c) => c.id === foeId) ?? world.units.find((u) => u.id === foeId));
     if (Math.hypot(dx, dy) > 1e-6) dir = directionIndex(dx, dy);
     else if (foe) dir = directionIndex(foe.x - unit.x, foe.y - unit.y);
     else if (unit.order.type === 'gather' && unit.path.length === 0) {
@@ -157,6 +164,7 @@ export function createSpriteLayer(scene: Phaser.Scene, world: World): SpriteLaye
       let sprite = unitSprites.get(unit.id);
       if (!sprite) {
         sprite = scene.add.sprite(0, 0, unit.kind);
+        if (unit.owner === 'enemy') sprite.setTint(PALETTE.enemyTint);
         unitSprites.set(unit.id, sprite);
       }
       if (unit.hp <= 0) {

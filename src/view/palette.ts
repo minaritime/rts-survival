@@ -6,6 +6,10 @@ export const PALETTE = {
   minimapFrame: 0xffffff,
   minimapBg: 0x000000,
   selection: 0x76ff03,
+  /** 거울 적: 지도 고리·미니맵 */
+  enemy: 0xff4d4f,
+  /** 거울 적 그림에 곱하는 색 (붉게) */
+  enemyTint: 0xff9a8a,
   progress: 0x76ff03,
   barBack: 0x000000,
 } as const;

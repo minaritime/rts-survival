@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TILE_SIZE } from '../data/constants.ts';
 import { commandAttack, commandAttackMove, commandSmart } from '../sim/commands.ts';
 import type { Point } from '../sim/grid.ts';
+import type { Unit } from '../sim/entities.ts';
 import { buildingAt, commanderOf, nodeAt, type World } from '../sim/world.ts';
 import { unitScreenPos, type ScreenPoint } from './coords.ts';
 import { DEPTH, PALETTE } from './palette.ts';
@@ -71,6 +72,22 @@ interface Drag {
  * - F1: 지휘관 고르기 + 화면 이동
  * - Ctrl+숫자 부대 지정 / Shift+숫자 더하기 / 숫자 불러오기 / 두 번 빨리: 화면 이동 (controlGroups.ts)
  */
+function ownUnits(world: World): Unit[] {
+  return world.units.filter((u) => u.owner === 'player');
+}
+
+function enemyUnits(world: World): Unit[] {
+  return world.units.filter((u) => u.owner === 'enemy' && u.hp > 0);
+}
+
+/** 살아 있는 내 유닛·건물 (부대에 담을 수 있는 것) */
+function isOwnAlive(world: World, id: number): boolean {
+  return (
+    world.units.some((u) => u.id === id && u.hp > 0 && u.owner === 'player') ||
+    world.buildings.some((b) => b.id === id && b.owner === 'player')
+  );
+}
+
 export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitInput {
   let selected = new Set<number>();
   let hotkeyCount = 0;
@@ -90,10 +107,10 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
     return Math.hypot(now.x - d.startScreen.x, now.y - d.startScreen.y);
   };
 
-  /** 내가 고른 것 중 살아 있는 유닛 */
+  /** 내가 고른 것 중 살아 있는 내 유닛 (적 유닛은 살펴보기만 하고 명령은 안 받음) */
   const myUnits = (): number[] => {
     const world = deps.getWorld();
-    return world.units.filter((u) => selected.has(u.id) && u.hp > 0).map((u) => u.id);
+    return world.units.filter((u) => selected.has(u.id) && u.hp > 0 && u.owner === 'player').map((u) => u.id);
   };
 
   scene.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -101,12 +118,12 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
     if (!deps.isActive() || deps.isPlacing() || deps.isBlockedAt(screen)) return;
     const world = deps.getWorld();
     const at = toWorld(screen);
-    const foe = unitAt(world.creatures, at, deps.getAlpha());
+    const foe = unitAt(world.creatures, at, deps.getAlpha()) ?? unitAt(enemyUnits(world), at, deps.getAlpha());
 
     if (targeting) {
       targeting = false;
       if (!pointer.leftButtonDown()) return; // 오른쪽 클릭 = 취소
-      // 괴물이면 공격, 내 건물이면 강제 공격, 땅이면 공격하며 이동
+      // 괴물·적이면 공격, 건물이면 공격(내 건물은 강제 공격), 땅이면 공격하며 이동
       const t = tileOf(at);
       const own = foe ? undefined : buildingAt(world, t.x, t.y);
       if (foe) commandAttack(world, myUnits(), foe.id);
@@ -118,17 +135,23 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
     if (pointer.rightButtonDown()) {
       const t = tileOf(at);
       const hasUnits = myUnits().length > 0;
-      const hasProducer = world.buildings.some((b) => selected.has(b.id) && b.complete);
+      const hasProducer = world.buildings.some((b) => selected.has(b.id) && b.complete && b.owner === 'player');
       if (foe && hasUnits) {
-        commandAttack(world, [...selected], foe.id);
+        commandAttack(world, myUnits(), foe.id);
         pingAt(unitScreenPos(foe, deps.getAlpha()), 'attack');
         return;
       }
       commandSmart(world, [...selected], t);
       if (!hasUnits && !hasProducer) return;
-      // 자원·건물을 찍었으면 노랑(그 칸 한가운데), 땅이면 초록(누른 자리)
-      const thing = nodeAt(world, t.x, t.y) ?? buildingAt(world, t.x, t.y);
-      if (thing) pingAt({ x: (t.x + 0.5) * TILE_SIZE, y: (t.y + 0.5) * TILE_SIZE }, 'target');
+      // 적 건물이면 빨강, 자원·건물을 찍었으면 노랑(그 칸 한가운데), 땅이면 초록(누른 자리)
+      const building = buildingAt(world, t.x, t.y);
+      const center = { x: (t.x + 0.5) * TILE_SIZE, y: (t.y + 0.5) * TILE_SIZE };
+      if (building?.owner === 'enemy' && hasUnits) {
+        pingAt(center, 'attack');
+        return;
+      }
+      const thing = nodeAt(world, t.x, t.y) ?? building;
+      if (thing) pingAt(center, 'target');
       else pingAt(at, 'move');
       return;
     }
@@ -148,7 +171,7 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
     const end = toWorld(deps.cursorAt());
     const picked =
       dragDistance(d) > DRAG_THRESHOLD
-        ? unitsInBox(world.units, d.startWorld, end, alpha).map((u) => u.id)
+        ? unitsInBox(ownUnits(world), d.startWorld, end, alpha).map((u) => u.id)
         : [clickPick(world, end, alpha)].filter((id): id is number => id !== undefined);
     selected = nextSelection(selected, picked, d.additive);
     targeting = false;
@@ -166,9 +189,7 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
     if (e.repeat) return;
     const world = deps.getWorld();
     // 부대에는 내 유닛·건물만 (괴물·자원을 골라 둔 채 눌러도 담기지 않게)
-    const own = [...selected].filter(
-      (id) => world.units.some((u) => u.id === id && u.hp > 0) || world.buildings.some((b) => b.id === id),
-    );
+    const own = [...selected].filter((id) => isOwnAlive(world, id));
     if (e.ctrlKey || e.metaKey) {
       if (own.length > 0) groups = assignGroup(groups, slot, own); // 빈 선택이면 아무 일 없음 (스타)
       return;
@@ -177,11 +198,7 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
       if (own.length > 0) groups = addToGroup(groups, slot, own);
       return;
     }
-    const ids = recallGroup(
-      groups,
-      slot,
-      (id) => world.units.some((u) => u.id === id && u.hp > 0) || world.buildings.some((b) => b.id === id),
-    );
+    const ids = recallGroup(groups, slot, (id) => isOwnAlive(world, id));
     if (ids.length === 0) return;
     selected = new Set(ids);
     inspected = null;
@@ -206,7 +223,7 @@ export function createUnitInput(scene: Phaser.Scene, deps: UnitInputDeps): UnitI
    * 자원 그림은 칸 위로 솟아 있어서 누른 칸 바로 아래 칸의 자원도 본다.
    */
   function clickPick(world: World, at: WorldPoint, alpha: number): number | undefined {
-    const unit = unitAt(world.units, at, alpha);
+    const unit = unitAt(ownUnits(world), at, alpha) ?? unitAt(enemyUnits(world), at, alpha);
     if (unit) return unit.id;
     const creature = unitAt(world.creatures, at, alpha);
     if (creature) return creature.id;

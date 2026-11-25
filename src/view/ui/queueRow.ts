@@ -28,10 +28,10 @@ const BAR = 5;
 /** 선택 정보 칸 위쪽에서 줄까지 (제목 + 상태 두 줄 아래) */
 const ROW_TOP = 100;
 
-/** 대기열을 보여 줄 건물: 건물 하나만 골랐고 다 지었고 줄이 있을 때 */
+/** 대기열을 보여 줄 건물: 내 건물 하나만 골랐고 다 지었고 줄이 있을 때 (적 건물 줄은 보이지도, 취소되지도 않게) */
 function queuedBuilding(world: World, selected: ReadonlySet<number>): Building | undefined {
   if (selected.size !== 1) return undefined;
-  const b = world.buildings.find((x) => selected.has(x.id));
+  const b = world.buildings.find((x) => selected.has(x.id) && x.owner === 'player');
   return b && b.complete && b.trainQueue.length > 0 ? b : undefined;
 }
 

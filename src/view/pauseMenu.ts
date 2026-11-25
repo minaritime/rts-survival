@@ -10,6 +10,7 @@ import { makeFixer } from './ui/widgets.ts';
  * - ESC: 브라우저가 잠금을 풀면 일시정지. 이때만 마우스가 화면 밖으로 나갈 수 있다
  * - 메뉴 버튼·F10: 잠금을 풀고 일시정지
  * - "계속하기" 를 누르면 다시 가두고 이어서
+ * - 아래 줄: 판 고르기 (지금 판은 강조, 다른 판을 누르면 그 판으로 새로 시작)
  */
 export interface PauseMenu {
   /** 게임 시간이 흐르는 중인지 */
@@ -20,7 +21,14 @@ export interface PauseMenu {
 }
 
 export const PAUSE_BUTTON_NAME = 'pause-button';
-const DIALOG = { width: 440, height: 250 } as const;
+const DIALOG = { width: 440, height: 300 } as const;
+
+/** 판 고르기 줄의 한 칸 */
+export interface StageChoice {
+  readonly label: string;
+  readonly current: boolean;
+  readonly pick: () => void;
+}
 const BUTTON_COLOR = '#1677ff';
 const BUTTON_HOVER = '#4096ff';
 
@@ -29,6 +37,7 @@ export function createPauseMenu(
   cursor: Cursor,
   minimapCamera: Phaser.Cameras.Scene2D.Camera,
   heading: string,
+  stages: readonly StageChoice[] = [],
 ): PauseMenu {
   let running = false;
   const fix = makeFixer(minimapCamera, DEPTH.pause);
@@ -57,7 +66,28 @@ export function createPauseMenu(
       })
       .setOrigin(0.5),
   );
-  const parts = [shade, dialog, title, button, note];
+  const stageButtons = stages.map((s) => {
+    const t = fix(
+      scene.add
+        .text(0, 0, s.label, {
+          ...textStyle(FONT.body, s.current ? '#ffffff' : COLOR.textSecondary),
+          fontStyle: s.current ? 'bold' : 'normal',
+          backgroundColor: s.current ? '#262626' : '#1a1a1a',
+          padding: { x: 12, y: 6 },
+        })
+        .setOrigin(0.5),
+    );
+    if (!s.current) {
+      t.setInteractive({ useHandCursor: true });
+      t.on('pointerover', () => t.setColor('#ffffff'));
+      t.on('pointerout', () => t.setColor(COLOR.textSecondary));
+      t.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+        if (pointer.leftButtonReleased() && !running) s.pick();
+      });
+    }
+    return t;
+  });
+  const parts = [shade, dialog, title, button, note, ...stageButtons];
 
   const show = (heading: string, label: string): void => {
     title.setText(heading);
@@ -118,7 +148,14 @@ export function createPauseMenu(
       dialog.strokeRoundedRect(x + 0.5, y + 0.5, DIALOG.width - 1, DIALOG.height - 1, RADIUS.dialog);
       title.setPosition(width / 2, y + 48);
       button.setPosition(width / 2, y + 120);
-      note.setPosition(width / 2, y + 196);
+      note.setPosition(width / 2, y + 190);
+      const gap = 8;
+      const total = stageButtons.reduce((sum, t) => sum + t.width, 0) + gap * Math.max(0, stageButtons.length - 1);
+      let left = width / 2 - total / 2;
+      for (const t of stageButtons) {
+        t.setPosition(left + t.width / 2, y + 256);
+        left += t.width + gap;
+      }
     },
   };
   menu.layout(scene.scale.width, scene.scale.height);

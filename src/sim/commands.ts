@@ -1,11 +1,12 @@
 import { BUILDINGS, type BuildingKind } from '../data/buildings.ts';
 import { PRODUCTION_QUEUE_MAX, UNITS, type TrainableKind } from '../data/units.ts';
-import { canBuild, canGather, createBuilding, unitTile, type Building, type Rally, type Unit } from './entities.ts';
+import { canBuild, canGather, createBuilding, unitTile, type Building, type Owner, type Rally, type Unit } from './entities.ts';
+import { findTarget } from './systems/combat.ts';
 import { canTrain } from './systems/production.ts';
 import { inBounds, type Point } from './grid.ts';
 import { pathToward, walkableFrom } from './navigation.ts';
 import { findPathNextToRect, inRect, type TileRect } from './path.ts';
-import { addBuilding, buildingAt, creatureAt, findCreature, findUnit, isWalkable, nodeAt, type World } from './world.ts';
+import { addBuilding, buildingAt, creatureAt, findUnit, isWalkable, nodeAt, stockOf, unitAt, type World } from './world.ts';
 
 /**
  * 플레이어 명령. 화면은 마우스·키보드를 이 함수들로만 sim 에 전한다.
@@ -98,7 +99,7 @@ export function commandStop(world: World, unitIds: readonly number[]): boolean {
   let any = false;
   for (const id of unitIds) {
     const unit = findUnit(world, id);
-    if (!unit) continue;
+    if (!unit || unit.owner !== 'player') continue; // 살펴보려고 고른 적 유닛은 멈추지 않는다
     const current = stepInProgress(unit);
     unit.order = current ? { type: 'move', target: current } : { type: 'idle' };
     unit.path = current ? [current] : [];
@@ -110,10 +111,10 @@ export function commandStop(world: World, unitIds: readonly number[]): boolean {
   return any;
 }
 
-/** 짓기 조건 중 아직 없는 건물 (다 지은 것만 셈). 다 갖췄으면 null */
-export function missingRequirement(world: World, kind: BuildingKind): BuildingKind | null {
+/** 짓기 조건 중 아직 없는 건물 (그 편의 다 지은 것만 셈). 다 갖췄으면 null */
+export function missingRequirement(world: World, kind: BuildingKind, owner: Owner = 'player'): BuildingKind | null {
   const need = BUILDINGS[kind].requires ?? [];
-  return need.find((k) => !world.buildings.some((b) => b.kind === k && b.complete)) ?? null;
+  return need.find((k) => !world.buildings.some((b) => b.kind === k && b.complete && b.owner === owner)) ?? null;
 }
 
 /**
@@ -148,7 +149,7 @@ export function canPlace(world: World, kind: BuildingKind, at: Point, builderIds
  * 짓기 명령: 일꾼이 건물 곁으로 가서 짓는다.
  * queue(Shift) 면 지금 짓는 것을 마친 뒤 하도록 줄 뒤에 세운다.
  */
-function orderBuild(world: World, unitIds: readonly number[], building: Building, queue = false): boolean {
+export function orderBuild(world: World, unitIds: readonly number[], building: Building, queue = false): boolean {
   let any = false;
   for (const id of unitIds) {
     const unit = findUnit(world, id);
@@ -200,15 +201,19 @@ export function commandBuild(
     const u = findUnit(world, id);
     return u !== undefined && canBuild(u);
   });
-  if (world.outcome !== 'playing' || unitIds.length === 0 || missingRequirement(world, kind) !== null) return null;
+  const owner = findUnit(world, unitIds[0] ?? -1)?.owner ?? 'player';
+  unitIds = unitIds.filter((id) => findUnit(world, id)?.owner === owner);
+  if (world.outcome !== 'playing' || unitIds.length === 0 || missingRequirement(world, kind, owner) !== null) return null;
   const spec = BUILDINGS[kind];
-  if (world.stock.mineral < spec.mineral || !canPlace(world, kind, at, unitIds)) return null;
+  const stock = stockOf(world, owner);
+  if (stock.mineral < spec.mineral || !canPlace(world, kind, at, unitIds)) return null;
   // 둘레까지 갈 길이 없으면 미네랄만 나가고 영영 못 짓는다
   if (!canReachFootprint(world, unitIds, { x: at.x, y: at.y, width: spec.width, height: spec.height })) return null;
-  world.stock.mineral -= spec.mineral;
-  const selfBuild = isFirstCommandCenter(world, kind);
-  if (kind === 'commandCenter') world.commandCenterPlaced = true;
-  const building = createBuilding(world.nextId++, kind, at, selfBuild);
+  stock.mineral -= spec.mineral;
+  // 첫 사령부 혼자 짓기는 나만 (적은 처음부터 기지가 있다)
+  const selfBuild = owner === 'player' && isFirstCommandCenter(world, kind);
+  if (kind === 'commandCenter' && owner === 'player') world.commandCenterPlaced = true;
+  const building = createBuilding(world.nextId++, kind, at, selfBuild, owner);
   addBuilding(world, building);
   if (selfBuild) {
     // 혼자 지어지므로 짓는 유닛은 필요 없다. 자리 안에 서 있던 유닛만 둘레로 걸어 나온다 (stepBuild 가 바로 놓아 줌)
@@ -233,10 +238,10 @@ export function commandTrain(world: World, buildingId: number, kind: TrainableKi
   if (world.outcome !== 'playing') return false;
   const b = world.buildings.find((x) => x.id === buildingId);
   const cost = UNITS[kind].mineral;
-  if (!b || !b.complete || !canTrain(b, kind) || b.trainQueue.length >= PRODUCTION_QUEUE_MAX || world.stock.mineral < cost) {
-    return false;
-  }
-  world.stock.mineral -= cost;
+  if (!b || !b.complete || !canTrain(b, kind) || b.trainQueue.length >= PRODUCTION_QUEUE_MAX) return false;
+  const stock = stockOf(world, b.owner);
+  if (stock.mineral < cost) return false;
+  stock.mineral -= cost;
   b.trainQueue.push(kind);
   return true;
 }
@@ -244,12 +249,12 @@ export function commandTrain(world: World, buildingId: number, kind: TrainableKi
 /** 생산 줄의 마지막 예약을 취소하고 미네랄을 돌려준다 (만들던 것이면 진행도 버림) */
 export function commandCancelTrain(world: World, buildingId: number, index?: number): boolean {
   const b = world.buildings.find((x) => x.id === buildingId);
-  if (!b) return false;
+  if (!b || b.owner !== 'player') return false;
   const at = index ?? b.trainQueue.length - 1;
   const kind = b.trainQueue[at];
   if (kind === undefined) return false;
   b.trainQueue.splice(at, 1);
-  world.stock.mineral += UNITS[kind].mineral;
+  stockOf(world, b.owner).mineral += UNITS[kind].mineral;
   // 만들던 맨 앞을 취소하면 진행을 버리고 다음 것을 처음부터
   if (at === 0) {
     b.trainProgress = 0;
@@ -262,17 +267,19 @@ export function commandCancelTrain(world: World, buildingId: number, index?: num
 export function commandSmart(world: World, unitIds: readonly number[], tile: Point): boolean {
   if (world.outcome !== 'playing') return false;
   // 고른 건물은 집결 지점을 정한다 (자원을 찍으면 일꾼이 나오자마자 캐러 감)
-  const buildings = world.buildings.filter((b) => unitIds.includes(b.id));
+  const buildings = world.buildings.filter((b) => unitIds.includes(b.id) && b.owner === 'player');
   if (buildings.length > 0) {
     const n = nodeAt(world, tile.x, tile.y);
     const rally: Rally = n ? { kind: 'node', nodeId: n.id } : { kind: 'point', x: tile.x, y: tile.y };
     for (const b of buildings) b.rally = rally;
   }
-  const units = unitIds.map((id) => findUnit(world, id)).filter((u): u is Unit => u !== undefined && u.hp > 0);
+  const units = unitIds
+    .map((id) => findUnit(world, id))
+    .filter((u): u is Unit => u !== undefined && u.hp > 0 && u.owner === 'player');
   if (units.length === 0) return buildings.length > 0;
-  // 괴물·사냥감이면 모두 공격
-  const creature = creatureAt(world, tile.x, tile.y);
-  if (creature) return commandAttack(world, units.map((u) => u.id), creature.id) || buildings.length > 0;
+  // 괴물·사냥감·적 유닛·적 건물이면 모두 공격
+  const foeId = creatureAt(world, tile.x, tile.y)?.id ?? unitAt(world, tile.x, tile.y, 'enemy')?.id ?? enemyBuildingAt(world, tile);
+  if (foeId !== undefined) return commandAttack(world, units.map((u) => u.id), foeId) || buildings.length > 0;
   // 자원이면 캘 수 있는 유닛만 캐고, 짓다 만 건물이면 짓고, 다친 건물이면 고친다 (지을 수 있는 유닛만). 나머지는 그쪽으로 걸어감
   const node = nodeAt(world, tile.x, tile.y);
   const there = node ? undefined : buildingAt(world, tile.x, tile.y);
@@ -286,6 +293,11 @@ export function commandSmart(world: World, unitIds: readonly number[], tile: Poi
   if (site && doerIds.length > 0) any = orderBuild(world, doerIds, site) || any;
   if (damaged && doerIds.length > 0) any = commandRepair(world, doerIds, damaged.id) || any;
   return any || buildings.length > 0;
+}
+
+function enemyBuildingAt(world: World, tile: Point): number | undefined {
+  const b = buildingAt(world, tile.x, tile.y);
+  return b && b.owner === 'enemy' ? b.id : undefined;
 }
 
 /** 살아 있는 내 유닛만 (명령 공통) */
@@ -303,12 +315,12 @@ function reorder(unit: Unit, order: Unit['order']): void {
   unit.engageId = null;
 }
 
-/** 공격: 괴물·사냥감 하나를 쫓아가 친다. 내 건물이면 강제 공격 (A 다음 건물 클릭) */
+/** 공격: 괴물·사냥감·다른 편 유닛·건물 하나를 쫓아가 친다. 같은 편 건물이면 강제 공격 (A 다음 건물 클릭) */
 export function commandAttack(world: World, unitIds: readonly number[], targetId: number): boolean {
   if (world.outcome !== 'playing') return false;
-  const target = findCreature(world, targetId) ?? world.buildings.find((b) => b.id === targetId);
+  const target = findTarget(world, targetId);
   if (!target || target.hp <= 0) return false;
-  const units = liveUnits(world, unitIds);
+  const units = liveUnits(world, unitIds).filter((u) => u.id !== targetId);
   for (const u of units) reorder(u, { type: 'attack', targetId });
   return units.length > 0;
 }
