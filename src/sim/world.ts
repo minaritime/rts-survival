@@ -88,8 +88,10 @@ export interface EnemyState {
   buildIndex: number;
   /** 지금 차례를 짓기 시작하려고 기다린 시각 (오래 못 지으면 건너뜀) */
   stepWaitSince: number | null;
-  /** 공격 기준치 (병력 보급) */
-  threshold: number;
+  /** 이번 공격의 대담함: 집 병력 힘이 내 힘 x 이 값이면 간다 (data/enemy.ts ENEMY_ATTACK) */
+  boldness: number;
+  /** 이 시각이 지나면 최소 병력만 돼도 간다 */
+  patienceUntil: number;
   /** 공격 중이면 출발할 때 병력 수, 아니면 0 */
   attackSize: number;
   /** 지금 공격에 나간 유닛 id (비었으면 모으는 중) */
@@ -98,6 +100,8 @@ export interface EnemyState {
   nextAttackAt: number;
   /** 보낸 공격 수 */
   attacksLaunched: number;
+  /** 이 시각부터 확장을 시도한다 */
+  nextExpandAt: number;
 }
 
 /** 판의 목표: 생존형(시간 버티기) / 섬멸형(적 건물 전부 부수기) */
@@ -248,11 +252,14 @@ function createEnemyState(plan: EnemyPlan): EnemyState {
     nextThinkAt: 0,
     buildIndex: 0,
     stepWaitSince: null,
-    threshold: ENEMY.firstThreshold,
+    // 공격·확장 시각과 대담함은 setupEnemy 가 시드 난수로 정한다
+    boldness: 1,
+    patienceUntil: Infinity,
     attackSize: 0,
     attackers: [],
-    nextAttackAt: ENEMY.firstAttackSeconds,
+    nextAttackAt: Infinity,
     attacksLaunched: 0,
+    nextExpandAt: Infinity,
   };
 }
 

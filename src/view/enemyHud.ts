@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { isSoldier } from '../data/units.ts';
 import { RAID_SHOW_TICKS, type World } from '../sim/world.ts';
 import { iconKey } from './assets.ts';
 import { tileToPx } from './coords.ts';
@@ -74,7 +75,7 @@ export function createEnemyHud(scene: Phaser.Scene, minimapCamera: Phaser.Camera
       syncRaids(world);
       if (!on) return;
       baseText.setText(String(world.buildings.filter((b) => b.owner === 'enemy').length));
-      armyText.setText(String(world.units.filter((u) => u.owner === 'enemy' && u.hp > 0 && u.kind === 'rifleman').length));
+      armyText.setText(String(world.units.filter((u) => u.owner === 'enemy' && u.hp > 0 && isSoldier(u.kind)).length));
     },
     layout(width) {
       centerX = width / 2;

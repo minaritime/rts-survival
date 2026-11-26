@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 
 const TILE = 48;
-const url = process.argv[2] ?? 'http://localhost:5180/?nolock';
+const url = process.argv[2] ?? 'http://localhost:5180/?nolock&seed=1';
 const outDir = process.argv[3] ?? 'screenshots';
 mkdirSync(outDir, { recursive: true });
 

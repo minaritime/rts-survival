@@ -8,8 +8,6 @@ import type { BuildingKind } from './buildings.ts';
 export const ENEMY = {
   /** 시작 미네랄 */
   startMineral: 200,
-  /** 일꾼을 이만큼까지 뽑는다 */
-  workerTarget: 16,
   /** 덤불에서 열매를 따 나르는 일꾼 수 (일꾼이 이보다 많을 때부터) */
   foragers: 2,
   foragersFromWorkers: 8,
@@ -17,17 +15,69 @@ export const ENEMY = {
   foodPerTrip: 10,
   /** 생각하는 간격 (매 틱 하지 않음) */
   thinkSeconds: 1,
-  /** 첫 공격 시각과 첫 공격 기준치(병력 보급) */
-  firstAttackSeconds: 7 * 60,
-  firstThreshold: 6,
-  /** 공격할 때마다 기준치가 이만큼 는다 */
-  thresholdStep: 4,
-  /** 물러난 뒤 다음 공격까지 최소한 이만큼 모은다 */
-  regroupSeconds: 60,
   /** 공격 중 병력이 처음의 이 비율 이하로 줄면 물러난다 */
   retreatRatio: 0.5,
   /** 보급이 이만큼 남으면 보급고를 더 짓는다 */
   supplyMargin: 2,
+} as const;
+
+type Range = readonly [number, number];
+
+/**
+ * 공격 시기는 적이 스스로 "준비됐다"고 판단한다 (2026-11-25 사용자 요청, 기획.md 8-2).
+ * 범위로 적힌 값은 판마다 시드 난수로 뽑아서 매판 다르다 (같은 시드면 같은 판). 공격을 보낼 때마다 다시 뽑는다.
+ * 집 병력의 힘이 내 힘 x 대담함 이상이면 간다. 오래 기다렸으면(인내심) 최소 병력만 돼도 간다. 미네랄이 쌓이면 여유 병력을 더 모은다.
+ */
+export const ENEMY_ATTACK = {
+  /** 첫 공격은 이 시각 사이 어딘가부터 할 수 있다 */
+  firstEarliest: [5.5 * 60, 8 * 60] as Range,
+  /** 공격대는 적어도 이만큼 힘 */
+  minArmy: 4,
+  /** 내 힘의 몇 배가 되면 가는지 */
+  boldness: [1.0, 1.6] as Range,
+  /** 모으기 시작하고 이만큼 지나면 최소 병력만 돼도 간다 */
+  patience: [150, 270] as Range,
+  /** 쓸 미네랄이 이만큼 쌓였으면 여유 병력을 richExtraArmy 만큼 더 모은다 */
+  surplusMineral: 400,
+  richExtraArmy: 4,
+  /** 물러난 뒤 다음 공격까지 쉬는 시간 */
+  regroup: [40, 100] as Range,
+  /** 가장 가까운 건물 대신 수비가 가장 얇은 내 건물을 노릴 확률 */
+  flankChance: 0.4,
+  /** 수비를 셀 때 건물에서 이 칸 안의 내 병력 */
+  guardRadius: 8,
+  /** 생산 목표 = 공격에 필요한 힘 + 이만큼 (최대 maxArmy) */
+  extraArmy: 2,
+  maxArmy: 40,
+  /** 새로 뽑는 병사가 돌격병일 확률 */
+  assaultChance: 0.35,
+} as const;
+
+/** 힘 점수 (보급 1 = 소총병 1). 일꾼은 싸움 힘으로 치지 않는다 */
+export const POWER: Readonly<Record<string, number>> = {
+  rifleman: 1,
+  assault: 1.5,
+  commander: 3,
+  scrapTurret: 1,
+  turret: 2,
+};
+
+/**
+ * 확장: 새 미네랄 무리 곁(맵의 expansions 자리)에 사령부를 짓는다 (기획.md 8-2).
+ * 고정 "8분마다" 대신 수입이 찼고(일꾼이 목표에 가까움) 자리가 안전할 때.
+ */
+export const ENEMY_EXPAND = {
+  /** 첫 확장은 이 시각 사이 어딘가부터 */
+  earliest: [4 * 60, 6 * 60] as Range,
+  /** 다음 확장까지 간격 */
+  gap: [150, 240] as Range,
+  /** 일꾼이 목표의 이 비율 이상이면 넓힌다 */
+  workerRatio: 0.75,
+  /** 확장 자리 이 칸 안에 내 유닛·건물이 있으면 미룬다 */
+  safeRadius: 10,
+  /** 다 지은 사령부 하나당 일꾼 목표 */
+  workersPerBase: 16,
+  maxWorkers: 32,
 } as const;
 
 /**

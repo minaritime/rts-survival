@@ -15,6 +15,11 @@ export function nextRandom(src: RandomSource): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
+/** [최소, 최대] 범위 안의 수 하나 */
+export function between(src: RandomSource, range: readonly [number, number]): number {
+  return range[0] + nextRandom(src) * (range[1] - range[0]);
+}
+
 /** 목록에서 하나 */
 export function pickOne<T>(src: RandomSource, items: readonly T[]): T {
   if (items.length === 0) throw new Error('빈 목록에서 고를 수 없음');

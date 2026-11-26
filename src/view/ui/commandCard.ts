@@ -55,15 +55,17 @@ const BUILD_BUTTONS: readonly { readonly row: number; readonly col: number; read
   { row: 2, col: 4, kind: 'barracks' },
 ];
 
-/** 건물이 뽑는 유닛의 버튼 자리 (스타처럼 일꾼 S, 소총병 A) */
+/** 건물이 뽑는 유닛의 버튼 자리 (스타처럼 일꾼 S, 소총병 A, 돌격병 D) */
 const TRAIN_BUTTONS: Readonly<Record<TrainableKind, { readonly row: number; readonly col: number }>> = {
   worker: { row: 1, col: 1 },
   rifleman: { row: 1, col: 0 },
+  assault: { row: 1, col: 2 },
 };
 
 const UNIT_ROLE: Readonly<Record<TrainableKind, string>> = {
   worker: '미네랄을 캐서 사령부로 나르고, 건물을 짓습니다',
   rifleman: `기본 보병. 공격 ${UNIT_ATTACK.rifleman.damage}, 사거리 ${UNIT_ATTACK.rifleman.range}`,
+  assault: `근접 탱커. 체력 ${UNITS.assault.maxHp}, 공격 ${UNIT_ATTACK.assault.damage}, 붙어서 싸웁니다`,
 };
 
 const ATTACK: CommandButton = {

@@ -9,7 +9,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-const url = process.argv[2] ?? 'http://localhost:5180/?nolock&stage=3';
+const url = process.argv[2] ?? 'http://localhost:5180/?nolock&stage=3&seed=1';
 const outDir = process.argv[3] ?? 'screenshots/stage3';
 mkdirSync(outDir, { recursive: true });
 

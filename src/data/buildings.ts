@@ -70,7 +70,7 @@ export const BUILDINGS: Readonly<Record<BuildingKind, BuildingSpec>> = {
     buildSeconds: 45,
     maxHp: 800,
     requires: ['commandCenter'],
-    trains: ['rifleman'],
+    trains: ['rifleman', 'assault'],
   },
   turret: { name: '포탑', width: 2, height: 2, mineral: 100, buildSeconds: 25, maxHp: 300, requires: ['commandCenter'] },
 };

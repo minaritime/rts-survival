@@ -41,6 +41,8 @@ def mat(name):
         'hazard_light': dict(color=(0.75, 0.55, 0.05), metallic=0.2, roughness=0.4),
         'olive': dict(color=(0.1, 0.13, 0.07), metallic=0.5, roughness=0.5),
         'olive_light': dict(color=(0.2, 0.24, 0.14), metallic=0.6, roughness=0.4),
+        'steel': dict(color=(0.2, 0.2, 0.22), metallic=0.85, roughness=0.35),
+        'steel_light': dict(color=(0.42, 0.42, 0.45), metallic=0.85, roughness=0.3),
         'visor_orange': dict(color=(0.5, 0.15, 0.0), roughness=0.05, emission=(1.0, 0.45, 0.05), emission_strength=4.0),
         # 괴물: 검붉은 껍질 + 빨갛게 빛나는 눈·갈라진 틈
         'carapace': dict(color=(0.16, 0.03, 0.03), metallic=0.2, roughness=0.45),
@@ -251,6 +253,27 @@ def rifleman(root):
     part('cube', 'gun', loc=(0.2, -0.17, 0.48), scale=(0.24, 0.025, 0.035), parent=root)
     part('cube', 'gun', loc=(0.06, -0.17, 0.43), scale=(0.04, 0.02, 0.06), parent=root)
     part('cube', 'olive_light', loc=(-0.13, 0, 0.56), scale=(0.045, 0.1, 0.11), parent=root)
+    return rig
+
+
+def assault(root):
+    """돌격병: 두꺼운 강철 중장갑(조금 크게) + 왼팔 큰 방패 + 오른손 빛나는 칼날. 소총병과 실루엣이 다르게"""
+    s = 1.08
+    rig = _humanoid(root, 'steel', 'steel_light', 'suit', 'visor_orange', scale=s)
+    # 큰 어깨 덧판 + 가슴판
+    for side in (1, -1):
+        pad = part('cube', 'steel_light', loc=(0, 0.2 * side * s, 0.7 * s), scale=(0.1 * s, 0.07 * s, 0.035 * s), parent=root)
+        common.bevel(pad, 0.015, 1)
+    chest = part('cube', 'steel_light', loc=(0.09 * s, 0, 0.55 * s), scale=(0.035 * s, 0.12 * s, 0.11 * s), parent=root)
+    common.bevel(chest, 0.015, 1)
+    # 방패 (왼쪽 앞, 몸을 반쯤 가림)
+    shield = part('cube', 'steel', loc=(0.17 * s, 0.22 * s, 0.45 * s), scale=(0.025 * s, 0.13 * s, 0.22 * s), parent=root)
+    common.bevel(shield, 0.02, 2)
+    part('cube', 'hazard_light', loc=(0.2 * s, 0.22 * s, 0.6 * s), scale=(0.008 * s, 0.11 * s, 0.018 * s), parent=root)
+    # 칼날 (오른손, 앞으로)
+    part('cube', 'gun', loc=(0.13 * s, -0.2 * s, 0.4 * s), scale=(0.05 * s, 0.035 * s, 0.04 * s), parent=root)
+    part('cube', 'steel_light', loc=(0.3 * s, -0.2 * s, 0.4 * s), scale=(0.13 * s, 0.012 * s, 0.035 * s), parent=root)
+    part('cube', 'visor_orange', loc=(0.3 * s, -0.2 * s, 0.37 * s), scale=(0.12 * s, 0.014 * s, 0.008 * s), parent=root)
     return rig
 
 

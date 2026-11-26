@@ -54,6 +54,15 @@ function modeFromUrl(): GameMode | undefined {
   return undefined;
 }
 
+/**
+ * 판의 시드: 주소에 ?seed=123 이 있으면 그 값(같은 판 재현용), 없으면 판마다 새로 (적 공격 시기·괴물 방향이 매판 다름)
+ */
+function seedForGame(): number {
+  const fixed = Number.parseInt(new URLSearchParams(window.location.search).get('seed') ?? '', 10);
+  if (Number.isFinite(fixed)) return fixed;
+  return Math.floor(Math.random() * 0x7fffffff) + 1;
+}
+
 export class GameScene extends Phaser.Scene {
   private world!: World;
   private stepper!: Stepper;
@@ -102,7 +111,7 @@ export class GameScene extends Phaser.Scene {
     this.playMs = 0;
     this.flashedRetreat = false;
     const spec = MODES[this.mode];
-    this.world = createWorld(parseMap(spec.rows), 1, spec.enemy);
+    this.world = createWorld(parseMap(spec.rows), seedForGame(), spec.enemy);
     // 튜토리얼: 끝날 때까지 짓기·채집·생산을 빠르게 (data/tutorial.ts). 1스테이지는 정상 규칙
     this.world.tutorialRules = this.mode === 'tutorial';
     // 괴물 공격은 1스테이지부터 (튜토리얼은 배우는 데만 집중)

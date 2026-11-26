@@ -14,6 +14,7 @@ export const UNIT_ATTACK: Readonly<Record<UnitKind, AttackSpec>> = {
   commander: { damage: 10, range: 4, cooldown: 1 },
   worker: { damage: 5, range: 1, cooldown: 1 },
   rifleman: { damage: 6, range: 5, cooldown: 1 },
+  assault: { damage: 10, range: 1, cooldown: 1 },
 };
 
 /** 공격하는 건물 (기획.md 6장) */

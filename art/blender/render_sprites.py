@@ -121,6 +121,8 @@ JOBS = {
                                       frames=1 + WALK_FRAMES, scale=NORMAL),
     'rifleman': lambda out: directional(out, 'rifleman', models.rifleman, pose=models.pose_walk,
                                         frames=1 + WALK_FRAMES, scale=NORMAL),
+    'assault': lambda out: directional(out, 'assault', models.assault, pose=models.pose_walk,
+                                       frames=1 + WALK_FRAMES, scale=NORMAL),
 }
 
 

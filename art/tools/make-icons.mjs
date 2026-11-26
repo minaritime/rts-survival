@@ -23,6 +23,7 @@ const NODES = ['mineral_0', 'berry_full', 'debris_0', 'meat'];
 const SHEETS = [
   ['worker', 96, 5],
   ['rifleman', 96, 5],
+  ['assault', 96, 5],
   ['commander', 96, 5],
   ['swarm', 96, 5],
   ['charger', 96, 5],

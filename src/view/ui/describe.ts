@@ -71,7 +71,7 @@ export function buildingRole(kind: BuildingKind): string {
     case 'supplyDepot':
       return `보급 +${BUILDINGS.supplyDepot.supply}`;
     case 'barracks':
-      return '소총병을 뽑습니다';
+      return '소총병·돌격병을 뽑습니다';
     case 'turret':
       return `괴물을 쏘는 포탑. 공격 ${BUILDING_ATTACK.turret!.damage}, 사거리 ${BUILDING_ATTACK.turret!.range}`;
   }
