@@ -21,13 +21,11 @@ function placeMine(world: World, kind: 'commandCenter' | 'barracks', x: number, 
 }
 
 describe('거울 적 기지 (섬멸형)', () => {
-  it('처음 상태: 사령부·보급고·병영, 일꾼 6, 소총병 2', () => {
+  it('처음 상태: 3맵은 사령부 하나만, 일꾼·병력 없음', () => {
     const w = newEnemyWorld();
     expect(w.objective).toBe('annihilate');
-    expect(w.buildings.filter((b) => b.owner === 'enemy').map((b) => b.kind).sort()).toEqual(['barracks', 'commandCenter', 'supplyDepot']);
-    const units = w.units.filter((u) => u.owner === 'enemy');
-    expect(units.filter((u) => u.kind === 'worker')).toHaveLength(6);
-    expect(units.filter((u) => u.kind === 'rifleman')).toHaveLength(2);
+    expect(w.buildings.filter((b) => b.owner === 'enemy').map((b) => b.kind)).toEqual(['commandCenter']);
+    expect(w.units.filter((u) => u.owner === 'enemy')).toHaveLength(0);
   });
 
   it('배급처는 더 가까운 쪽이 차지', () => {
@@ -55,7 +53,7 @@ describe('거울 적 기지 (섬멸형)', () => {
     for (const b of w.buildings) if (b.owner === 'enemy') b.hp = 0;
     stepWorld(w);
     expect(w.outcome).toBe('victory');
-    expect(w.stats.enemyBuildingsDestroyed).toBe(3);
+    expect(w.stats.enemyBuildingsDestroyed).toBe(1);
   });
 
   it('내 소총병은 가까이 온 적 유닛을 알아서 쏜다', () => {
@@ -72,9 +70,10 @@ describe('거울 적 기지 (섬멸형)', () => {
   it('적 병력이 지을 자리에 서 있으면 비키고 짓는다 (건설 대본이 멈추지 않음)', () => {
     const w = newEnemyWorld();
     const e = w.enemy!;
-    e.buildIndex = 3; // 포탑 (43,15)
+    e.buildIndex = MAP3_ENEMY.buildOrder.findIndex((s) => s.kind === 'turret' && s.at.x === 43 && s.at.y === 15);
     e.stock.mineral = 1000;
-    w.tick = 210 * 20;
+    w.tick = 300 * 20;
+    w.units.push(createTrainedUnit(w.nextId++, 'worker', { x: 50, y: 12 }, 'enemy'));
     for (const [x, y] of [[43, 15], [44, 15], [43, 16], [44, 16]] as const) {
       w.units.push(createTrainedUnit(w.nextId++, 'rifleman', { x, y }, 'enemy'));
     }

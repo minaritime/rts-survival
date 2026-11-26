@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENEMY_ATTACK, ENEMY_EXPAND } from '../src/data/enemy.ts';
+import { ENEMY_ATTACK, ENEMY_EXPAND, ENEMY_GROW } from '../src/data/enemy.ts';
 import { UNITS } from '../src/data/units.ts';
 import { MAP3_ENEMY, MAP3_ROWS } from '../src/maps/map3.ts';
 import { homeArmy, readyToAttack } from '../src/sim/ai/enemyArmy.ts';
@@ -39,52 +39,58 @@ describe('돌격병', () => {
   });
 });
 
-describe('적이 스스로 판단하는 공격', () => {
-  it('시드가 다르면 첫 공격 시각·대담함이 다르고, 같으면 같다', () => {
+describe('적은 내 병력을 모르고 스스로 정한 규모로 공격', () => {
+  it('시드가 다르면 첫 공격 시각·규모가 다르고, 같으면 같다', () => {
     const a = enemyWorld(1).enemy!;
     const b = enemyWorld(2).enemy!;
     const a2 = enemyWorld(1).enemy!;
     expect(a.nextAttackAt).not.toBe(b.nextAttackAt);
     expect(a.nextAttackAt).toBe(a2.nextAttackAt);
-    expect(a.boldness).toBe(a2.boldness);
+    expect(a.waveSize).toBe(a2.waveSize);
     for (const e of [a, b]) {
       expect(e.nextAttackAt).toBeGreaterThanOrEqual(ENEMY_ATTACK.firstEarliest[0]);
       expect(e.nextAttackAt).toBeLessThanOrEqual(ENEMY_ATTACK.firstEarliest[1]);
+      expect(e.waveSize).toBeGreaterThanOrEqual(ENEMY_ATTACK.firstWave[0]);
     }
   });
 
-  it('내 병력이 더 세면 기다리고, 인내심이 다하면 최소 병력으로도 간다', () => {
-    const w = enemyWorld();
-    const e = w.enemy!;
-    addUnits(w, 'rifleman', 'enemy', 4, 44, 16); // 처음 2 + 4 = 6
-    addUnits(w, 'rifleman', 'player', 12, 10, 40);
-    e.nextAttackAt = 0;
-    e.boldness = 1;
-    e.patienceUntil = 100;
-    const home = homeArmy(w, e);
-    expect(readyToAttack(w, e, 50, home)).toBe(false);
-    expect(readyToAttack(w, e, 100, home)).toBe(true);
-  });
-
-  it('내 병력보다 세면 바로 간다', () => {
+  it('내 병력이 많든 적든 같은 판단: 규모가 차면 가고, 모자라면 인내심이 다할 때까지 기다린다', () => {
     const w = enemyWorld();
     const e = w.enemy!;
     addUnits(w, 'rifleman', 'enemy', 6, 44, 16);
     e.nextAttackAt = 0;
-    e.boldness = 1.5;
-    e.patienceUntil = Infinity;
-    // 내 힘 = 지휘관 3 → 필요 4.5, 적 8
-    expect(readyToAttack(w, e, 1, homeArmy(w, e))).toBe(true);
+    e.patienceUntil = 100;
+    e.waveSize = 6;
+    expect(readyToAttack(e, 50, homeArmy(w, e))).toBe(true);
+    addUnits(w, 'rifleman', 'player', 30, 10, 40); // 내 병력을 늘려도
+    expect(readyToAttack(e, 50, homeArmy(w, e))).toBe(true);
+    e.waveSize = 10;
+    expect(readyToAttack(e, 50, homeArmy(w, e))).toBe(false);
+    expect(readyToAttack(e, 100, homeArmy(w, e))).toBe(true);
+  });
+
+  it('공격대는 내 시작 자리로 찾아가 본 것을 친다', () => {
+    const w = enemyWorld();
+    const e = w.enemy!;
+    addUnits(w, 'rifleman', 'enemy', 8, 44, 16);
+    e.nextAttackAt = 0;
+    e.waveSize = 6;
+    e.nextThinkAt = 0;
+    run(w, 1);
+    expect(e.attacksLaunched).toBe(1);
+    const start = w.map.features.start;
+    const squad = w.units.filter((u) => e.attackers.includes(u.id));
+    expect(squad.every((u) => u.order.type === 'attackMove' && Math.hypot(u.order.target.x - start.x, u.order.target.y - start.y) < 4)).toBe(true);
   });
 });
 
-describe('적 확장', () => {
+describe('적 확장·발전', () => {
   function readyToExpand(w: World): void {
     const e = w.enemy!;
     e.nextExpandAt = 0;
     e.buildIndex = MAP3_ENEMY.buildOrder.length; // 대본은 끝난 것으로
     e.stock.mineral = 2000;
-    addUnits(w, 'worker', 'enemy', ENEMY_EXPAND.workersPerBase - 6, 56, 14);
+    addUnits(w, 'worker', 'enemy', ENEMY_EXPAND.workersPerBase, 56, 14);
   }
 
   it('일꾼이 찼으면 남동 확장 자리에 사령부를 짓는다', () => {
@@ -95,13 +101,24 @@ describe('적 확장', () => {
     expect(cc).toBeDefined();
   });
 
-  it('확장 자리 곁에 내 유닛이 있으면 다음 자리로', () => {
+  it('내가 그 자리를 먼저 차지했으면 다음 자리로', () => {
     const w = enemyWorld();
     readyToExpand(w);
-    addUnits(w, 'rifleman', 'player', 1, 58, 40);
+    const mine = createBuilding(w.nextId++, 'commandCenter', { x: 57, y: 36 });
+    addBuilding(w, mine);
     run(w, 8);
     const spots = w.buildings.filter((b) => b.owner === 'enemy' && b.kind === 'commandCenter').map((b) => `${b.x},${b.y}`);
     expect(spots).toContain('4,4');
-    expect(spots).not.toContain('57,36');
+  });
+
+  it('미네랄이 쌓이면 병영을 더 짓는다 (최대 3)', () => {
+    const w = enemyWorld();
+    const e = w.enemy!;
+    e.buildIndex = MAP3_ENEMY.buildOrder.length;
+    e.nextExpandAt = Infinity;
+    e.stock.mineral = 5000;
+    addUnits(w, 'worker', 'enemy', 8, 56, 14);
+    run(w, 200);
+    expect(w.buildings.filter((b) => b.owner === 'enemy' && b.kind === 'barracks')).toHaveLength(ENEMY_GROW.maxBarracks);
   });
 });

@@ -61,11 +61,12 @@ export const MAP3_ROWS: readonly string[] = [
   '################################################################',
 ];
 
-/** 적 기지 계획: 처음부터 있는 건물, 일꾼·소총병이 서는 곳, 건설 순서 */
+/**
+ * 적 기지 계획. 적은 늘 일꾼 없이 시작한다 (2026-11-26 사용자 확정). 처음 건물은 스테이지마다 다르고 초반일수록 적다
+ */
 export interface EnemyPlan {
   readonly start: readonly { readonly kind: BuildingKind; readonly at: { readonly x: number; readonly y: number } }[];
-  /** 처음 일꾼·소총병 수 (사령부 둘레에 선다) */
-  readonly workers: number;
+  /** 처음 소총병 수 (집결지 둘레에 선다). 초반 스테이지는 0 */
   readonly riflemen: number;
   /** 병력이 모여 기다리는 곳 */
   readonly rally: { readonly x: number; readonly y: number };
@@ -76,26 +77,24 @@ export interface EnemyPlan {
   readonly expansions: readonly { readonly x: number; readonly y: number }[];
 }
 
+/** 3맵은 초반 스테이지: 사령부 하나만 (미네랄은 나와 같은 200) */
 export const MAP3_ENEMY: EnemyPlan = {
-  start: [
-    { kind: 'commandCenter', at: { x: 55, y: 6 } },
-    { kind: 'supplyDepot', at: { x: 52, y: 2 } },
-    { kind: 'barracks', at: { x: 50, y: 10 } },
-  ],
-  workers: 6,
-  riflemen: 2,
+  start: [{ kind: 'commandCenter', at: { x: 55, y: 6 } }],
+  riflemen: 0,
   rally: { x: 46, y: 16 },
   buildOrder: [
-    { kind: 'supplyDepot', at: { x: 55, y: 12 }, afterSeconds: 60 },
-    { kind: 'barracks', at: { x: 46, y: 6 }, afterSeconds: 120 },
+    { kind: 'barracks', at: { x: 50, y: 10 }, afterSeconds: 90 },
     // 북서 배급처(33,12) 곁 보급고: 배급처를 빼앗는다 (더 가까운 쪽이 차지)
-    { kind: 'supplyDepot', at: { x: 35, y: 14 }, afterSeconds: 150 },
-    { kind: 'turret', at: { x: 43, y: 15 }, afterSeconds: 210 },
-    { kind: 'turret', at: { x: 55, y: 20 }, afterSeconds: 270 },
+    { kind: 'supplyDepot', at: { x: 35, y: 14 }, afterSeconds: 180 },
+    { kind: 'barracks', at: { x: 46, y: 6 }, afterSeconds: 240 },
+    { kind: 'turret', at: { x: 43, y: 15 }, afterSeconds: 300 },
     // 남동 배급처(46,35) 곁
     { kind: 'supplyDepot', at: { x: 48, y: 33 }, afterSeconds: 360 },
+    { kind: 'turret', at: { x: 55, y: 20 }, afterSeconds: 420 },
   ],
   depotSlots: [
+    { x: 52, y: 2 },
+    { x: 55, y: 12 },
     { x: 58, y: 14 },
     { x: 52, y: 16 },
     { x: 58, y: 17 },

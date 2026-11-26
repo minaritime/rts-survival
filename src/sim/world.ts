@@ -88,8 +88,10 @@ export interface EnemyState {
   buildIndex: number;
   /** 지금 차례를 짓기 시작하려고 기다린 시각 (오래 못 지으면 건너뜀) */
   stepWaitSince: number | null;
-  /** 이번 공격의 대담함: 집 병력 힘이 내 힘 x 이 값이면 간다 (data/enemy.ts ENEMY_ATTACK) */
-  boldness: number;
+  /** 다음 공격 규모: 집 병력 힘이 이만큼 모이면 간다 (data/enemy.ts ENEMY_ATTACK) */
+  waveSize: number;
+  /** 공격대가 찾아갈 곳(지도에서 아는 곳) 차례 */
+  scoutIndex: number;
   /** 이 시각이 지나면 최소 병력만 돼도 간다 */
   patienceUntil: number;
   /** 공격 중이면 출발할 때 병력 수, 아니면 0 */
@@ -252,8 +254,9 @@ function createEnemyState(plan: EnemyPlan): EnemyState {
     nextThinkAt: 0,
     buildIndex: 0,
     stepWaitSince: null,
-    // 공격·확장 시각과 대담함은 setupEnemy 가 시드 난수로 정한다
-    boldness: 1,
+    // 공격·확장 시각과 공격 규모는 setupEnemy 가 시드 난수로 정한다
+    waveSize: Infinity,
+    scoutIndex: 0,
     patienceUntil: Infinity,
     attackSize: 0,
     attackers: [],

@@ -1,5 +1,5 @@
 import { BUILDINGS, SUPPLY_MAX, type BuildingKind } from '../../data/buildings.ts';
-import { ENEMY, ENEMY_ATTACK, ENEMY_EXPAND } from '../../data/enemy.ts';
+import { ENEMY, ENEMY_EXPAND, ENEMY_GROW } from '../../data/enemy.ts';
 import { UNITS } from '../../data/units.ts';
 import type { EnemyPlan } from '../../maps/map3.ts';
 import { canPlace, commandBuild, commandGather, commandMove, commandTrain, orderBuild } from '../commands.ts';
@@ -7,17 +7,17 @@ import { createBuilding, createTrainedUnit, type ResourceNode, type Unit } from 
 import type { Point } from '../grid.ts';
 import { rectDistance } from '../path.ts';
 import { between } from '../random.ts';
-import { distanceToBuilding } from '../systems/combat.ts';
 import { addBuilding, isWalkable, supplyCap, supplyUsed, type EnemyState, type World } from '../world.ts';
-import { controlArmy, rollNextAttack, trainSoldiers } from './enemyArmy.ts';
+import { controlArmy, planFirstAttack, trainSoldiers } from './enemyArmy.ts';
 import { allUnitIds, enemyBuildings, enemyUnits } from './enemyQuery.ts';
 
 /**
  * 거울 적 기지의 머리 (기획.md 8-2). 대본 + 상태 기계, 1초마다 생각한다.
  * 1. 일꾼: 사령부마다 16기(최대 40)까지 뽑고, 쉬는 일꾼은 미네랄로. 일꾼이 8기를 넘으면 2기는 덤불 열매를 따 나른다 (내 식량 수급 방해)
  * 2. 건설: 맵 대본(buildOrder)의 시각이 되면 정해진 자리에. 보급이 모자라면 보급고를 더 짓는다
- * 3. 확장: 일꾼이 찼고 자리가 안전하면 맵의 확장 자리에 사령부 (시작 시각·간격은 시드 난수)
- * 4. 병력·공격·수비: enemyArmy.ts (스스로 "준비됐다"고 판단할 때 공격)
+ * 3. 확장: 일꾼이 찼으면 맵의 확장 자리에 사령부 (시작 시각·간격은 시드 난수)
+ * 4. 발전: 미네랄이 쌓이면 병영을 더 (최대 3)
+ * 5. 병력·공격·수비: enemyArmy.ts. 적은 내 병력을 모른다 (스스로 정한 규모가 모이면 공격)
  */
 /** 쉬는 일꾼에게 줄 미네랄은 사령부에서 이 칸 안 */
 const MINERAL_RADIUS = 10;
@@ -30,18 +30,16 @@ export function setupEnemy(world: World, plan: EnemyPlan): void {
     b.hp = b.maxHp;
     addBuilding(world, b);
   }
-  const center = enemyBuildings(world).find((b) => b.kind === 'commandCenter');
-  if (!center) throw new Error('적 기지에 사령부가 없음');
+  if (!enemyBuildings(world).some((b) => b.kind === 'commandCenter')) throw new Error('적 기지에 사령부가 없음');
   for (const kind of ['barracks'] as const) {
     for (const b of enemyBuildings(world).filter((x) => x.kind === kind)) b.rally = { kind: 'point', ...plan.rally };
   }
   const enemy = world.enemy;
   if (!enemy) throw new Error('적 상태가 없음');
   // 매판 다르게 (같은 시드면 같은 판)
-  rollNextAttack(world, enemy, between(world, ENEMY_ATTACK.firstEarliest));
+  planFirstAttack(world, enemy);
   enemy.nextExpandAt = between(world, ENEMY_EXPAND.earliest);
-  const spots = freeTilesAround(world, center, plan.workers);
-  for (const at of spots) world.units.push(createTrainedUnit(world.nextId++, 'worker', at, 'enemy'));
+  // 일꾼은 없이 시작한다 (사령부가 뽑는다)
   const guards = freeTilesAround(world, { x: plan.rally.x, y: plan.rally.y, width: 1, height: 1 }, plan.riflemen);
   for (const at of guards) world.units.push(createTrainedUnit(world.nextId++, 'rifleman', at, 'enemy'));
 }
@@ -148,7 +146,9 @@ function planBuilding(world: World, enemy: EnemyState, now: number): number {
     if (slot) return Math.max(0, attempt(world, enemy, 'supplyDepot', slot));
   }
   const waiting = followBuildOrder(world, enemy, now);
-  return waiting > 0 ? waiting : planExpansion(world, enemy, now);
+  if (waiting > 0) return waiting;
+  const saving = planExpansion(world, enemy, now);
+  return saving > 0 ? saving : planGrowth(world, enemy);
 }
 
 /** 대본 한 줄을 시도한다. 미네랄을 모으며 기다리는 중이면 그 값 */
@@ -181,7 +181,8 @@ function planExpansion(world: World, enemy: EnemyState, now: number): number {
   const centers = enemyBuildings(world).filter((b) => b.kind === 'commandCenter');
   if (centers.some((b) => !b.complete)) return 0;
   if (enemyUnits(world, 'worker').length < workerTarget(world) * ENEMY_EXPAND.workerRatio) return 0;
-  const slot = enemy.plan.expansions.find((p) => canPlace(world, 'commandCenter', p, allUnitIds(world)) && isSafe(world, p));
+  // 적은 내 유닛을 모른다: 자리가 비어 있으면 간다 (내가 먼저 지었으면 다음 자리)
+  const slot = enemy.plan.expansions.find((p) => canPlace(world, 'commandCenter', p, allUnitIds(world)));
   if (!slot) return 0;
   const outcome = attempt(world, enemy, 'commandCenter', slot);
   if (outcome === BUILT) {
@@ -191,14 +192,13 @@ function planExpansion(world: World, enemy: EnemyState, now: number): number {
   return Math.max(0, outcome);
 }
 
-/** 확장 자리 곁에 내 유닛·건물이 없으면 true */
-function isSafe(world: World, at: Point): boolean {
-  const spec = BUILDINGS.commandCenter;
-  const cx = at.x + spec.width / 2;
-  const cy = at.y + spec.height / 2;
-  const near = (x: number, y: number) => Math.hypot(x - cx, y - cy) <= ENEMY_EXPAND.safeRadius;
-  if (world.units.some((u) => u.owner === 'player' && u.hp > 0 && near(u.x, u.y))) return false;
-  return !world.buildings.some((b) => b.owner === 'player' && distanceToBuilding(b, cx, cy) <= ENEMY_EXPAND.safeRadius);
+/** 발전: 쓸 미네랄이 쌓였고 병영이 최대보다 적으면 기지 곁에 병영을 더 짓는다 */
+function planGrowth(world: World, enemy: EnemyState): number {
+  if (enemy.stock.mineral < ENEMY_GROW.surplusMineral) return 0;
+  const barracks = enemyBuildings(world).filter((b) => b.kind === 'barracks');
+  if (barracks.length >= ENEMY_GROW.maxBarracks || barracks.some((b) => !b.complete)) return 0;
+  const slot = spotNearBase(world, 'barracks');
+  return slot ? Math.max(0, attempt(world, enemy, 'barracks', slot)) : 0;
 }
 
 /** 다 지은 사령부 수에 맞춘 일꾼 목표 */

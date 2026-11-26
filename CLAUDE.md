@@ -145,8 +145,8 @@ node scripts/screenshot.mjs [주소] [폴더]   # 개발 서버를 띄운 뒤 �
 4. ~~기획.md 11-1 시작 미네랄~~ (11/24 반영)
 5. 3단계 나머지: 모닥불·간이벽·간이 포탑·보급고·병영·포탑, 배급처 켜짐(6칸 안 건물)·막힘. 건물마다 Blender 모델 + 튜토리얼 목표 추가 여부를 사용자와 상의
 6. ~~4단계~~ (11/24), ~~5단계~~ ~~GitHub 배포~~ ~~6단계~~ ~~섬멸형 시제품~~ (11/25), ~~적 확장·스스로 판단하는 공격·돌격병~~ (11/26, 아래 절)
-   - **사용자에게 확인받을 것**: 3협곡을 직접 해 보고 첫 공격 규모(9~11기)·시기(5:30~8:00)가 맞는지, 적 확장 자리를 내가 먼저 차지하는 재미가 있는지
-   - 그 밖 후보: 적 전용 그림(지금은 붉은 색 곱하기), 아래 판 적 아이콘도 붉게, 적 확장 기지 곁 포탑, 쌓이기만 하는 적 미네랄을 쓸 곳(병영 추가 등)
+   - 11/26 사용자: 3협곡이 어렵다 → 적은 일꾼 없이 사령부만으로 시작, 내 병력에 맞추지 않음 (아래 절). **유닛 수치는 사용자가 표를 보고 정하기로 함, 먼저 고치지 말 것** (돌격병이 같은 값 소총병을 이기는 것 알려 둠)
+   - 그 밖 후보: 적 전용 그림(지금은 붉은 색 곱하기), 아래 판 적 아이콘도 붉게, 적 확장 기지 곁 포탑, 쌓이기만 하는 적 미네랄을 쓸 곳
 
 ## 4단계(유닛 여러 기)에서 꼭 할 것 (2단계 리뷰에서 넘어온 것)
 - 성능: `path.ts` 의 문자열 키(`"x,y"`)를 숫자 키(y*width+x)로, `world.nodes.find`·`findUnit` 선형 탐색을 id Map 으로. 같은 목표로 보낸 유닛들은 경로 공유. 갈 수 없는 곳을 찍으면 유닛마다 영역 전체를 뒤지는 것도 막기
@@ -166,7 +166,7 @@ node scripts/screenshot.mjs [주소] [폴더]   # 개발 서버를 띄운 뒤 �
 - ~~다음: 거울 적 기지(섬멸형) 시제품~~ (11/25 아래 "섬멸형 시제품" 참고)
 
 ## 섬멸형 시제품: 3스테이지 협곡 + 거울 적 (2026-11-25)
-- 지도 `src/maps/map3.ts` (64x48) + 적 계획 `MAP3_ENEMY`(처음 건물·일꾼 6·소총병 2·집결지·건설 대본·보급고 자리). 지형 그림 `npm run art:terrain3` → `public/assets/terrain/map3.jpg`
+- 지도 `src/maps/map3.ts` (64x48) + 적 계획 `MAP3_ENEMY`(처음 건물·처음 소총병 수·집결지·건설 대본·보급고 자리·확장 자리). 지형 그림 `npm run art:terrain3` → `public/assets/terrain/map3.jpg`
 - **편 구분**: `Unit.owner`·`Building.owner` (`'player' | 'enemy'`). 적 자원은 `world.enemy.stock`, `stockOf(world, owner)`. `supplyCap/supplyUsed(world, owner='player')`, `missingRequirement(world, kind, owner)`. **화면·규칙에서 "내 것"을 셀 때는 owner 를 꼭 거를 것**
 - 전투(`combat.ts`): 상대 = 괴물 + 다른 편 유닛(먼저), 없으면 다른 편 건물. `findTarget` 이 괴물·유닛·건물을 id 로 찾음. 괴물은 내 것만 노림(혼합형에서 정할 것)
 - 적 머리 `sim/ai/enemyAi.ts` (1초마다, 수치 `data/enemy.ts`): 일꾼 → 대본 건설 → 보급 모자라면 보급고 → 병력 모아 공격, 절반 이하면 물러남. 내 유닛이 적 건물 12칸 안이면 집 병력이 수비. (11/26 공격 판단·확장은 아래 "적 확장" 절로 바뀜)
@@ -179,10 +179,12 @@ node scripts/screenshot.mjs [주소] [폴더]   # 개발 서버를 띄운 뒤 �
 ## 적 확장 + 스스로 판단하는 공격 + 돌격병 (2026-11-26)
 - **돌격병** `assault` (`data/units.ts`, `combat.ts`): 75, 20초, 체력 100, 공격 10 사거리 1. 병영 D. 장갑 종류는 아직 없어 체력만 높음. 그림 `models.assault`(강철 중장갑+방패+칼날), `isSoldier(kind)` = 소총병·돌격병
 - **적 머리 나눔**: `ai/enemyAi.ts`(일꾼·건설·확장), `ai/enemyArmy.ts`(힘 셈·생산·공격 판단·노릴 곳·수비), `ai/enemyQuery.ts`(공용 찾기). 규칙과 수치는 기획.md 8-2 의 "2026-11-26 바꾼 방식", `data/enemy.ts` 의 `ENEMY_ATTACK`·`POWER`·`ENEMY_EXPAND`
-- 적 상태: 기준치(`threshold`) 없앰 → `boldness`·`patienceUntil`·`nextExpandAt`. 처음 값은 `setupEnemy` 가 시드 난수로 뽑음 (`rollNextAttack`)
+- **적은 내 정보를 모른다** (11/26 사용자 확정): 공격 규모 `waveSize` 를 스스로 정하고(시드 난수, 보낼 때마다 증가), 공격대는 본 것(10칸)만 치고 못 봤으면 `scoutPoints`(내 시작 자리 → 확장 자리·배급처)를 차례로 찾아감. 확장 자리 안전 확인도 없음. **내 병력·건물 수를 적 판단에 다시 쓰지 말 것**. 수비(적 건물 12칸 안 내 유닛)만 봄
+- 적은 **일꾼 없이** 시작, 처음 건물은 `EnemyPlan.start`(스테이지마다). 3맵 = 사령부만, 병영·보급고는 `buildOrder`. 미네랄 400 이상이면 병영을 더(`ENEMY_GROW`, 최대 3)
+- 적 상태: `waveSize`·`patienceUntil`·`scoutIndex`·`nextExpandAt`. 처음 값은 `setupEnemy` → `planFirstAttack`
 - 3맵 확장 자리 `MAP3_ENEMY.expansions`: 남동 (57,36) 미네랄 x62 y34~40, 북서 (4,4) 미네랄 x1 y2~8. 나도 쓸 수 있음
 - **판마다 시드가 바뀜** (`GameScene.seedForGame`). 주소 `?seed=숫자` 면 고정. 점검 스크립트는 `&seed=1` 로 고정해 둠
-- 테스트 `tests/enemyBrain.test.ts` (돌격병 생산, 시드별 차이, 공격 판단, 확장·안전 판단)
+- 테스트 `tests/enemyBrain.test.ts` (돌격병 생산, 시드별 차이, 내 병력과 상관없는 공격 판단, 내 시작 자리로 찾아감, 확장, 병영 추가)
 
 ## GitHub 배포 (2026-11-25, 5단계 뒤 사용자 요청으로 앞당김)
 - 저장소 **minaritime/rts-survival (공개)**, 주소 **https://minaritime.github.io/rts-survival/**

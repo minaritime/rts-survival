@@ -1,20 +1,20 @@
 import { ENEMY, ENEMY_ATTACK, POWER } from '../../data/enemy.ts';
 import { isSoldier, UNITS, type TrainableKind } from '../../data/units.ts';
 import { commandAttackMove, commandMove, commandTrain } from '../commands.ts';
-import type { Owner, Unit } from '../entities.ts';
+import type { Unit } from '../entities.ts';
 import type { Point } from '../grid.ts';
 import { between, nextRandom } from '../random.ts';
 import { distanceToBuilding } from '../systems/combat.ts';
-import { commanderOf, type EnemyState, type World } from '../world.ts';
+import type { EnemyState, World } from '../world.ts';
 import { enemyBuildings } from './enemyQuery.ts';
 
 /**
- * 거울 적의 병력 (기획.md 8-2). 공격 시기는 고정 시각이 아니라 적이 스스로 판단한다 (2026-11-25 사용자 요청):
- * - 힘 = 병사·지휘관·포탑 점수 합 (data/enemy.ts POWER)
- * - 집 병력의 힘이 내 힘 x 대담함 이상이면 공격. 인내심 시각이 지나면 최소 병력만 돼도 공격
- * - 대담함·인내심·첫 공격 시각·물러난 뒤 쉬는 시간은 시드 난수로 뽑아 매판 다르다
- * - 노리는 곳: 대개 가장 가까운 내 건물, 가끔(flankChance) 수비가 가장 얇은 내 건물
- * - 생산: 공격에 필요한 힘 + 여유만큼 (미네랄이 쌓였으면 여유를 더). 병사 일부는 돌격병
+ * 거울 적의 병력 (기획.md 8-2). **적은 내 병력·건물 수를 모른다** (2026-11-26 사용자 확정: 완전히 따로 생각한다):
+ * - 공격 규모(힘)를 스스로 정해(시드 난수) 그만큼 모이면 간다. 보낼 때마다 다음 규모가 는다
+ * - 인내심 시각이 지나면 최소 병력만 돼도 간다
+ * - 어디로: 공격대가 본(sightRadius 안) 내 것을 친다. 못 봤으면 지도에서 아는 곳(내 시작 자리, 확장 자리, 배급처)을 차례로 찾아간다
+ * - 생산: 다음 공격 규모까지. 병사 일부는 돌격병
+ * - 수비: 적 건물 곁에 온 내 유닛은 적이 볼 수 있으니 막으러 나온다
  */
 
 /** 내 유닛이 적 건물에 이만큼 가까우면 수비하러 나온다 */
@@ -26,52 +26,37 @@ function powerOf(kind: string): number {
   return POWER[kind] ?? 0;
 }
 
-function soldiersOf(world: World, owner: Owner): Unit[] {
-  return world.units.filter((u) => u.owner === owner && u.hp > 0 && isSoldier(u.kind));
-}
-
-/** 내 힘: 병사 + 지휘관 + 다 지은 포탑 */
-export function playerPower(world: World): number {
-  let power = 0;
-  for (const u of world.units) if (u.owner === 'player' && u.hp > 0) power += powerOf(u.kind);
-  for (const b of world.buildings) if (b.owner === 'player' && b.complete) power += powerOf(b.kind);
-  return power;
-}
-
 function armyPower(units: readonly Unit[]): number {
   return units.reduce((sum, u) => sum + powerOf(u.kind), 0);
 }
 
 /** 공격에 나가지 않은(집에 있는) 병사 */
 export function homeArmy(world: World, enemy: EnemyState): Unit[] {
-  return soldiersOf(world, 'enemy').filter((u) => !enemy.attackers.includes(u.id));
+  return world.units.filter((u) => u.owner === 'enemy' && u.hp > 0 && isSoldier(u.kind) && !enemy.attackers.includes(u.id));
 }
 
-/** 다음 공격 계획을 새로 뽑는다: earliest 부터 갈 수 있고, 대담함·인내심은 난수 */
-export function rollNextAttack(world: World, enemy: EnemyState, earliest: number): void {
+/** 판 시작: 첫 공격 시각·규모·인내심을 시드 난수로 */
+export function planFirstAttack(world: World, enemy: EnemyState): void {
+  enemy.waveSize = between(world, ENEMY_ATTACK.firstWave);
+  setAttackTime(world, enemy, between(world, ENEMY_ATTACK.firstEarliest));
+}
+
+function setAttackTime(world: World, enemy: EnemyState, earliest: number): void {
   enemy.nextAttackAt = earliest;
-  enemy.boldness = between(world, ENEMY_ATTACK.boldness);
   enemy.patienceUntil = earliest + between(world, ENEMY_ATTACK.patience);
 }
 
-/** 집 병력이 지금 공격하러 갈 만한가 */
-export function readyToAttack(world: World, enemy: EnemyState, now: number, home: readonly Unit[]): boolean {
+/** 집 병력이 지금 공격하러 갈 만한가 (내 병력과 상관없이 스스로 정한 규모로만) */
+export function readyToAttack(enemy: EnemyState, now: number, home: readonly Unit[]): boolean {
   if (now < enemy.nextAttackAt) return false;
   const power = armyPower(home);
   if (power < ENEMY_ATTACK.minArmy) return false;
-  return power >= playerPower(world) * enemy.boldness || now >= enemy.patienceUntil;
+  return power >= enemy.waveSize || now >= enemy.patienceUntil;
 }
 
-/** 모을 병력의 힘. 쓸 미네랄이 쌓였으면 여유를 더 */
-function wantedArmy(world: World, enemy: EnemyState, spare: number): number {
-  const need = Math.max(ENEMY_ATTACK.minArmy, Math.ceil(playerPower(world) * enemy.boldness));
-  const extra = ENEMY_ATTACK.extraArmy + (spare >= ENEMY_ATTACK.surplusMineral ? ENEMY_ATTACK.richExtraArmy : 0);
-  return Math.min(ENEMY_ATTACK.maxArmy, need + extra);
-}
-
-/** 병영마다 병사를 뽑는다 (집 병력 + 줄에 선 것이 목표에 닿을 때까지). spare = 쓸 수 있는 미네랄 */
+/** 병영마다 병사를 뽑는다 (집 병력 + 줄에 선 것이 다음 공격 규모에 닿을 때까지). spare = 쓸 수 있는 미네랄 */
 export function trainSoldiers(world: World, enemy: EnemyState, spare: number): void {
-  const want = wantedArmy(world, enemy, spare);
+  const want = Math.min(ENEMY_ATTACK.maxArmy, enemy.waveSize);
   let power = armyPower(homeArmy(world, enemy));
   for (const b of enemyBuildings(world)) for (const k of b.trainQueue) power += powerOf(k);
   for (const b of enemyBuildings(world)) {
@@ -99,12 +84,8 @@ export function controlArmy(world: World, enemy: EnemyState, now: number): void 
   }
   const army = homeArmy(world, enemy);
   if (defend(world, army)) return;
-  const target = readyToAttack(world, enemy, now, army) ? chooseTarget(world, enemy.plan.rally) : undefined;
-  if (target) {
-    enemy.attackers = army.map((u) => u.id);
-    enemy.attackSize = army.length;
-    enemy.attacksLaunched += 1;
-    commandAttackMove(world, enemy.attackers, target);
+  if (readyToAttack(enemy, now, army)) {
+    launch(world, enemy, army);
     return;
   }
   const stray = army.filter(
@@ -113,27 +94,65 @@ export function controlArmy(world: World, enemy: EnemyState, now: number): void 
   if (stray.length > 0) commandMove(world, stray.map((u) => u.id), enemy.plan.rally);
 }
 
+/** 집 병력을 공격대로 보낸다. 다음 공격 규모는 이번보다 크게 */
+function launch(world: World, enemy: EnemyState, army: readonly Unit[]): void {
+  enemy.attackers = army.map((u) => u.id);
+  enemy.attackSize = army.length;
+  enemy.attacksLaunched += 1;
+  enemy.scoutIndex = 0;
+  enemy.waveSize = Math.min(ENEMY_ATTACK.maxArmy, Math.max(enemy.waveSize, armyPower(army)) + between(world, ENEMY_ATTACK.waveGrowth));
+  commandAttackMove(world, enemy.attackers, scoutPoints(world)[0]!);
+}
+
 /**
- * 공격 중: 쉬게 된 공격대는 가장 가까운 내 건물로. 절반 이하로 줄거나 칠 것이 없으면 물러나고,
- * 다음 공격 계획을 새로 뽑는다 (물러나자마자 다시 나오지 않게 쉬는 시간도)
+ * 공격 중: 절반 이하로 줄면 물러나고 쉬는 시간을 둔다.
+ * 쉬게 된 공격대는 본 내 것 중 가장 가까운 곳으로, 본 것이 없으면 아는 곳을 차례로 찾아간다
  */
 function stepAttack(world: World, enemy: EnemyState, now: number): void {
   const alive = new Set(world.units.filter((u) => u.hp > 0).map((u) => u.id));
   enemy.attackers = enemy.attackers.filter((id) => alive.has(id));
-  const lead = world.units.find((u) => u.id === enemy.attackers[0]);
-  const target = nearestTarget(world, lead ? { x: lead.x, y: lead.y } : enemy.plan.rally);
-  if (enemy.attackers.length <= enemy.attackSize * ENEMY.retreatRatio || !target) {
+  const squad = world.units.filter((u) => enemy.attackers.includes(u.id));
+  if (squad.length === 0 || squad.length <= enemy.attackSize * ENEMY.retreatRatio) {
     commandMove(world, enemy.attackers, enemy.plan.rally);
     enemy.attackers = [];
     enemy.attackSize = 0;
-    rollNextAttack(world, enemy, now + between(world, ENEMY_ATTACK.regroup));
+    setAttackTime(world, enemy, now + between(world, ENEMY_ATTACK.regroup));
     return;
   }
-  const idle = enemy.attackers.filter((id) => {
-    const u = world.units.find((x) => x.id === id);
-    return u !== undefined && u.order.type === 'idle' && u.engageId === null;
-  });
-  if (idle.length > 0) commandAttackMove(world, idle, target);
+  const idle = squad.filter((u) => u.order.type === 'idle' && u.engageId === null);
+  if (idle.length === 0) return;
+  const lead = squad[0]!;
+  const seen = seenTarget(world, squad, lead);
+  if (seen) {
+    commandAttackMove(world, idle.map((u) => u.id), seen);
+    return;
+  }
+  const points = scoutPoints(world);
+  const here = points[enemy.scoutIndex % points.length]!;
+  if (Math.hypot(lead.x - here.x, lead.y - here.y) <= ENEMY_ATTACK.arriveRadius) enemy.scoutIndex += 1;
+  commandAttackMove(world, idle.map((u) => u.id), points[enemy.scoutIndex % points.length]!);
+}
+
+/** 공격대 누군가의 시야 안에 있는 내 건물(먼저)·유닛 중 선두에 가장 가까운 것 */
+function seenTarget(world: World, squad: readonly Unit[], lead: Unit): Point | undefined {
+  const r = ENEMY_ATTACK.sightRadius;
+  const building = world.buildings
+    .filter((b) => b.owner === 'player' && squad.some((u) => distanceToBuilding(b, u.x, u.y) <= r))
+    .sort((a, b) => distanceToBuilding(a, lead.x, lead.y) - distanceToBuilding(b, lead.x, lead.y))[0];
+  if (building) return { x: building.x, y: building.y };
+  const unit = world.units
+    .filter((m) => m.owner === 'player' && m.hp > 0 && squad.some((u) => Math.hypot(u.x - m.x, u.y - m.y) <= r))
+    .sort((a, b) => Math.hypot(a.x - lead.x, a.y - lead.y) - Math.hypot(b.x - lead.x, b.y - lead.y))[0];
+  return unit ? { x: Math.round(unit.x), y: Math.round(unit.y) } : undefined;
+}
+
+/** 지도에서 아는 곳: 내 시작 자리, 그다음 확장 자리·배급처를 내 시작 자리에서 가까운 차례로 */
+function scoutPoints(world: World): Point[] {
+  const start = world.map.features.start;
+  const others = [...(world.enemy?.plan.expansions ?? []), ...world.map.features.feeders].sort(
+    (a, b) => Math.hypot(a.x - start.x, a.y - start.y) - Math.hypot(b.x - start.x, b.y - start.y),
+  );
+  return [start, ...others];
 }
 
 /** 내 유닛이 적 건물 곁에 오면 쉬는 병력이 그쪽으로. 보냈으면 true */
@@ -144,25 +163,4 @@ function defend(world: World, army: readonly Unit[]): boolean {
   const idle = army.filter((u) => u.order.type !== 'attackMove' && u.engageId === null);
   if (idle.length > 0) commandAttackMove(world, idle.map((u) => u.id), { x: Math.round(intruder.x), y: Math.round(intruder.y) });
   return true;
-}
-
-/** 출발할 때 노릴 곳: 대개 가장 가까운 내 건물, 가끔 수비가 가장 얇은 내 건물 */
-function chooseTarget(world: World, from: Point): Point | undefined {
-  if (nextRandom(world) >= ENEMY_ATTACK.flankChance) return nearestTarget(world, from);
-  const guards = world.units.filter((u) => u.owner === 'player' && u.hp > 0 && powerOf(u.kind) > 0);
-  const weakest = world.buildings
-    .filter((b) => b.owner === 'player')
-    .map((b) => ({ b, guard: guards.filter((u) => distanceToBuilding(b, u.x, u.y) <= ENEMY_ATTACK.guardRadius).length }))
-    .sort((p, q) => p.guard - q.guard || distanceToBuilding(p.b, from.x, from.y) - distanceToBuilding(q.b, from.x, from.y))[0];
-  return weakest ? { x: weakest.b.x, y: weakest.b.y } : nearestTarget(world, from);
-}
-
-/** 가장 가까운 내 건물, 건물이 없으면 지휘관 */
-function nearestTarget(world: World, from: Point): Point | undefined {
-  const mine = world.buildings
-    .filter((b) => b.owner === 'player')
-    .sort((a, b) => distanceToBuilding(a, from.x, from.y) - distanceToBuilding(b, from.x, from.y))[0];
-  if (mine) return { x: mine.x, y: mine.y };
-  const c = commanderOf(world);
-  return c && c.hp > 0 ? { x: Math.round(c.x), y: Math.round(c.y) } : undefined;
 }
