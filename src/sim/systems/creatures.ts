@@ -5,7 +5,7 @@ import { findPath, findPathNextTo, findPathNextToRect, type Walkable } from '../
 import { nextRandom } from '../random.ts';
 import { buildingAt, findUnit, isWalkable, type World } from '../world.ts';
 import { distanceToBuilding, strike, withinRange } from './combat.ts';
-import { spreadApart } from './spacing.ts';
+import { collideUnitsWithMonsters, spreadApart } from './spacing.ts';
 
 /**
  * 괴물과 사냥감의 움직임 (기획.md 8-1). 괴물은 내 것만 노린다 (거울 적과는 아직 싸우지 않음, 혼합형에서 정할 것).
@@ -221,9 +221,15 @@ export function stepCreatures(world: World, dt: number, now: number): void {
   spreadMonsters(world, dt);
 }
 
-/** 괴물끼리 살짝 밀어내기 (spacing.ts) */
+/** 괴물끼리 살짝 밀어내기, 그리고 유닛과 부딪히기 (spacing.ts). 물러가는 괴물은 막지 않는다 */
 function spreadMonsters(world: World, dt: number): void {
-  spreadApart(world, world.creatures.filter((c) => c.hp > 0 && isMonster(c)), dt);
+  const monsters = world.creatures.filter((c) => c.hp > 0 && isMonster(c));
+  spreadApart(world, monsters, dt);
+  collideUnitsWithMonsters(
+    world,
+    world.units.filter((u) => u.hp > 0),
+    monsters.filter((c) => !c.retreating),
+  );
 }
 
 /** 배급처 칸에서 within 칸 안에 괴물이 있는지 (막힘 판정) */

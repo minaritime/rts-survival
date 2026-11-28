@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAP3_ROWS } from '../src/maps/map3.ts';
 import { commandAttack, commandAttackMove, commandMove } from '../src/sim/commands.ts';
-import { createTrainedUnit, type Unit } from '../src/sim/entities.ts';
+import { createCreature, createTrainedUnit, type Unit } from '../src/sim/entities.ts';
 import { parseMap } from '../src/sim/mapLoader.ts';
 import { createWorld, stepWorld, type World } from '../src/sim/world.ts';
 import { run } from './helpers.ts';
@@ -72,5 +72,43 @@ describe('유닛 겹침 (11/26 사용자 제보)', () => {
     commandMove(w, [b.id], { x: 6, y: 28 });
     run(w, 8);
     expect([Math.round(a.x), Math.round(a.y), Math.round(b.x), Math.round(b.y)]).toEqual([14, 28, 6, 28]);
+  });
+
+  it('충돌: 괴물 떼가 둘러싸도 유닛과 겹치지 않고, 서 있는 유닛을 밀어내지도 못한다', () => {
+    const w = createWorld(parseMap(MAP3_ROWS));
+    const guard = createTrainedUnit(w.nextId++, 'rifleman', { x: 10, y: 28 });
+    guard.hp = 1e6;
+    w.units.push(guard);
+    const swarm = Array.from({ length: 8 }, (_, i) => {
+      const m = createCreature(w.nextId++, 'swarm', { x: 14 + (i % 4) * 0.3, y: 27 + Math.floor(i / 4) });
+      m.hp = 1e6;
+      w.creatures.push(m);
+      return m;
+    });
+    let closest = Infinity;
+    for (let t = 0; t < 20 * 8; t++) {
+      stepWorld(w);
+      for (const m of swarm) closest = Math.min(closest, Math.hypot(m.x - guard.x, m.y - guard.y));
+    }
+    expect(closest).toBeGreaterThan(0.6);
+    expect(Math.hypot(guard.x - 10, guard.y - 28)).toBeLessThan(0.05);
+  });
+
+  it('충돌: 괴물을 뚫고 가라고 하면 겹치지 않고 옆으로 돌아 도착한다', () => {
+    const w = createWorld(parseMap(MAP3_ROWS));
+    const walker = createTrainedUnit(w.nextId++, 'rifleman', { x: 6, y: 28 });
+    walker.hp = 1e6;
+    w.units.push(walker);
+    const charger = createCreature(w.nextId++, 'charger', { x: 10, y: 28 });
+    charger.hp = 1e6;
+    w.creatures.push(charger);
+    commandMove(w, [walker.id], { x: 14, y: 28 });
+    let closest = Infinity;
+    for (let t = 0; t < 20 * 8; t++) {
+      stepWorld(w);
+      closest = Math.min(closest, Math.hypot(charger.x - walker.x, charger.y - walker.y));
+    }
+    expect(closest).toBeGreaterThan(0.6);
+    expect([Math.round(walker.x), Math.round(walker.y)]).toEqual([14, 28]);
   });
 });
