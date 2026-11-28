@@ -31,6 +31,7 @@ export function setupEnemy(world: World, plan: EnemyPlan): void {
     addBuilding(world, b);
   }
   if (!enemyBuildings(world).some((b) => b.kind === 'commandCenter')) throw new Error('적 기지에 사령부가 없음');
+  if (!enemyBuildings(world).some((b) => b.kind === 'turret')) throw new Error('적 기지에 처음 포탑이 없음');
   for (const kind of ['barracks'] as const) {
     for (const b of enemyBuildings(world).filter((x) => x.kind === kind)) b.rally = { kind: 'point', ...plan.rally };
   }

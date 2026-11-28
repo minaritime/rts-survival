@@ -21,11 +21,21 @@ function placeMine(world: World, kind: 'commandCenter' | 'barracks', x: number, 
 }
 
 describe('거울 적 기지 (섬멸형)', () => {
-  it('처음 상태: 3맵은 사령부 하나만, 일꾼·병력 없음', () => {
+  it('처음 상태: 3맵은 사령부 + 곁 포탑, 일꾼·병력 없음', () => {
     const w = newEnemyWorld();
     expect(w.objective).toBe('annihilate');
-    expect(w.buildings.filter((b) => b.owner === 'enemy').map((b) => b.kind)).toEqual(['commandCenter']);
+    expect(w.buildings.filter((b) => b.owner === 'enemy').map((b) => b.kind)).toEqual(['commandCenter', 'turret']);
     expect(w.units.filter((u) => u.owner === 'enemy')).toHaveLength(0);
+  });
+
+  it('처음 포탑이 적 사령부로 다가온 지휘관을 쏜다', () => {
+    const w = newEnemyWorld();
+    const me = commander(w);
+    me.x = 54;
+    me.y = 13;
+    const hp = me.hp;
+    run(w, 3);
+    expect(me.hp).toBeLessThan(hp);
   });
 
   it('배급처는 더 가까운 쪽이 차지', () => {
@@ -53,7 +63,7 @@ describe('거울 적 기지 (섬멸형)', () => {
     for (const b of w.buildings) if (b.owner === 'enemy') b.hp = 0;
     stepWorld(w);
     expect(w.outcome).toBe('victory');
-    expect(w.stats.enemyBuildingsDestroyed).toBe(1);
+    expect(w.stats.enemyBuildingsDestroyed).toBe(MAP3_ENEMY.start.length);
   });
 
   it('내 소총병은 가까이 온 적 유닛을 알아서 쏜다', () => {

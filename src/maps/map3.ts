@@ -62,7 +62,8 @@ export const MAP3_ROWS: readonly string[] = [
 ];
 
 /**
- * 적 기지 계획. 적은 늘 일꾼 없이 시작한다 (2026-11-26 사용자 확정). 처음 건물은 스테이지마다 다르고 초반일수록 적다
+ * 적 기지 계획. 적은 늘 일꾼 없이 시작한다 (2026-11-26 사용자 확정). 처음 건물은 스테이지마다 다르고 초반일수록 적다.
+ * 처음 건물에는 늘 사령부 곁 포탑이 있다 (지휘관 초반 러시 막기, setupEnemy 가 확인)
  */
 export interface EnemyPlan {
   readonly start: readonly { readonly kind: BuildingKind; readonly at: { readonly x: number; readonly y: number } }[];
@@ -77,9 +78,12 @@ export interface EnemyPlan {
   readonly expansions: readonly { readonly x: number; readonly y: number }[];
 }
 
-/** 3맵은 초반 스테이지: 사령부 하나만 (미네랄은 나와 같은 200) */
+/** 3맵은 초반 스테이지: 사령부 + 곁 포탑 하나 (미네랄은 나와 같은 200). 포탑은 지휘관 초반 러시를 막는다 (2026-11-28) */
 export const MAP3_ENEMY: EnemyPlan = {
-  start: [{ kind: 'commandCenter', at: { x: 55, y: 6 } }],
+  start: [
+    { kind: 'commandCenter', at: { x: 55, y: 6 } },
+    { kind: 'turret', at: { x: 55, y: 10 } },
+  ],
   riflemen: 0,
   rally: { x: 46, y: 16 },
   buildOrder: [
