@@ -1,4 +1,4 @@
-import { BUILDINGS, type BuildingKind } from '../data/buildings.ts';
+import { BUILD_CANCEL_REFUND, BUILDINGS, type BuildingKind } from '../data/buildings.ts';
 import { PRODUCTION_QUEUE_MAX, UNITS, type TrainableKind } from '../data/units.ts';
 import { canBuild, canGather, createBuilding, unitTile, type Building, type Owner, type Rally, type Unit } from './entities.ts';
 import { findTarget } from './systems/combat.ts';
@@ -6,7 +6,7 @@ import { canTrain } from './systems/production.ts';
 import { inBounds, type Point } from './grid.ts';
 import { pathToward, walkableFrom } from './navigation.ts';
 import { findPathNextToRect, inRect, type TileRect } from './path.ts';
-import { addBuilding, buildingAt, creatureAt, findUnit, isWalkable, nodeAt, stockOf, unitAt, type World } from './world.ts';
+import { addBuilding, buildingAt, removeBuilding, creatureAt, findUnit, isWalkable, nodeAt, stockOf, unitAt, type World } from './world.ts';
 
 /**
  * 플레이어 명령. 화면은 마우스·키보드를 이 함수들로만 sim 에 전한다.
@@ -235,6 +235,20 @@ export function commandBuild(
     orderBuild(world, unitIds, building, queue);
   }
   return building;
+}
+
+/**
+ * 짓는 중인 내 건물을 취소: 자리를 비우고 미네랄의 75% 를 돌려준다. 짓던 유닛은 줄의 다음 건물로 (stepBuild 가 처리).
+ * 판의 첫 사령부를 취소하면 다음 사령부도 다시 첫 사령부처럼 혼자 빨리 지어진다
+ */
+export function commandCancelBuild(world: World, buildingId: number): boolean {
+  if (world.outcome !== 'playing') return false;
+  const b = world.buildings.find((x) => x.id === buildingId);
+  if (!b || b.complete || b.owner !== 'player') return false;
+  removeBuilding(world, b);
+  stockOf(world, b.owner).mineral += Math.floor(BUILDINGS[b.kind].mineral * BUILD_CANCEL_REFUND);
+  if (b.selfBuild && !world.buildings.some((x) => x.kind === 'commandCenter' && x.owner === 'player')) world.commandCenterPlaced = false;
+  return true;
 }
 
 /** 이번에 놓을 건물이 판의 첫 사령부인지 (혼자 빨리 지어짐, data/buildings.ts FIRST_COMMAND_CENTER) */

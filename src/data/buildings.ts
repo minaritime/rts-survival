@@ -87,6 +87,9 @@ export const SUPPLY_MAX = 200;
  */
 export const FIRST_COMMAND_CENTER = { buildSeconds: 10 } as const;
 
+/** 짓는 중 취소하면 낸 미네랄의 이만큼 돌려받는다 (스타처럼 75%, 2026-11-28) */
+export const BUILD_CANCEL_REFUND = 0.75;
+
 /** 지휘관 회복 (기획.md 3장: 모닥불·사령부 곁에서 초당 2) */
 export const HEAL_PER_SECOND = 2;
 

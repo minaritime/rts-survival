@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
-import { BUILDINGS, FIRST_COMMAND_CENTER, type BuildingKind } from '../../data/buildings.ts';
+import { BUILD_CANCEL_REFUND, BUILDINGS, FIRST_COMMAND_CENTER, type BuildingKind } from '../../data/buildings.ts';
 import { UNITS, PRODUCTION_QUEUE_MAX, type TrainableKind } from '../../data/units.ts';
 import {
+  commandCancelBuild,
   commandCancelTrain,
   commandStop,
   commandTrain,
@@ -157,16 +158,34 @@ function cancelButton(buildings: readonly Building[]): CommandButton {
   };
 }
 
+/** 짓는 중인 건물 취소 (B). 여럿 골랐으면 모두 */
+function cancelBuildButton(buildings: readonly Building[]): CommandButton {
+  const refund = buildings.reduce((sum, b) => sum + Math.floor(BUILDINGS[b.kind].mineral * BUILD_CANCEL_REFUND), 0);
+  return {
+    row: 2,
+    col: 4,
+    symbol: 'cancel',
+    enabled: true,
+    tooltip: { title: '짓기 취소 (B)', status: `짓기를 멈추고 미네랄 ${refund}을 돌려받습니다 (${Math.round(BUILD_CANCEL_REFUND * 100)}%)` },
+    run: (ctx) => {
+      for (const b of buildings) commandCancelBuild(ctx.world, b.id);
+    },
+  };
+}
+
 /**
  * 지금 고른 것에 맞는 명령들.
  * - 지휘관·일꾼이 있으면: 정지 + 건물
  * - 다른 유닛만: 정지
+ * - 짓는 중인 내 건물: 짓기 취소
  * - 생산 건물만(첫 건물과 같은 종류, 다 지은 것): 유닛 + 취소
  */
 export function commandsFor(world: World, selected: ReadonlySet<number>): readonly CommandButton[] {
   const units = world.units.filter((u) => selected.has(u.id) && u.hp > 0 && u.owner === 'player');
   if (units.some(canBuild)) return [ATTACK, STOP, ...BUILD_BUTTONS.map((b) => buildButton(b.row, b.col, b.kind, world))];
   if (units.length > 0) return [ATTACK, STOP];
+  const unfinished = world.buildings.filter((b) => selected.has(b.id) && !b.complete && b.owner === 'player');
+  if (unfinished.length > 0) return [cancelBuildButton(unfinished)];
   const first = world.buildings.find((b) => selected.has(b.id) && b.complete && b.owner === 'player');
   if (!first) return [];
   const same = world.buildings.filter((b) => selected.has(b.id) && b.complete && b.kind === first.kind && b.owner === 'player');
