@@ -48,18 +48,19 @@ function spreadTargets(world: World, target: Point, count: number): Point[] {
 export function commandMove(world: World, unitIds: readonly number[], target: Point): boolean {
   const units = unitIds.map((id) => findUnit(world, id)).filter((u): u is Unit => u !== undefined && u.hp > 0);
   if (units.length > 1) {
-    const spots = spreadTargets(world, target, units.length);
-    // 목적지에서 먼 유닛부터 먼 칸으로 (서로 길을 덜 가로지르게)
-    const byDistance = [...units].sort((a, b) => Math.hypot(a.x - target.x, a.y - target.y) - Math.hypot(b.x - target.x, b.y - target.y));
     let any = false;
-    byDistance.forEach((u, i) => {
-      // 나눠 준 칸이 벽 너머라 못 가면 찍은 곳으로
-      const spot = spots[i];
-      if ((spot && moveOne(world, u, spot)) || moveOne(world, u, target)) any = true;
-    });
+    // 나눠 준 칸이 벽 너머라 못 가면 찍은 곳으로
+    for (const [u, spot] of assignSpots(world, units, target)) if ((spot && moveOne(world, u, spot)) || moveOne(world, u, target)) any = true;
     return any;
   }
   return units[0] ? moveOne(world, units[0], target) : false;
+}
+
+/** 여러 기에게 목적지 둘레 칸을 하나씩 나눠 준다. 목적지에서 가까운 유닛부터 가까운 칸으로 (서로 길을 덜 가로지르게) */
+function assignSpots(world: World, units: readonly Unit[], target: Point): [Unit, Point | undefined][] {
+  const spots = spreadTargets(world, target, units.length);
+  const byDistance = [...units].sort((a, b) => Math.hypot(a.x - target.x, a.y - target.y) - Math.hypot(b.x - target.x, b.y - target.y));
+  return byDistance.map((u, i) => [u, spots[i]]);
 }
 
 function moveOne(world: World, unit: Unit, target: Point): boolean {
@@ -338,7 +339,11 @@ export function commandAttack(world: World, unitIds: readonly number[], targetId
 export function commandAttackMove(world: World, unitIds: readonly number[], target: Point): boolean {
   if (world.outcome !== 'playing' || !inBounds(world.map.grid, target.x, target.y)) return false;
   const units = liveUnits(world, unitIds);
-  for (const u of units) reorder(u, { type: 'attackMove', target });
+  // 이동처럼 도착 칸을 나눠 준다 (한 점에 몰리지 않게, 11/26 사용자 제보). 나눠 준 칸에 못 가면 찍은 곳으로
+  for (const [u, spot] of assignSpots(world, units, target)) {
+    const reachable = spot !== undefined && pathToward(world, unitTile(u), spot) !== null;
+    reorder(u, { type: 'attackMove', target: reachable ? spot : target });
+  }
   return units.length > 0;
 }
 

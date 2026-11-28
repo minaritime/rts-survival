@@ -9,6 +9,7 @@ import { markBerryEmptied } from './berries.ts';
 import { stepBuild, stepRepair } from './construction.ts';
 import { stepAttackMove, stepAttackOrder, stepIdleGuard } from './combat.ts';
 import { isStarving } from './hunger.ts';
+import { spreadApart } from './spacing.ts';
 
 /** 유닛 하나의 이동 속도 (칸/초) */
 function speedOf(world: World, unit: Unit): number {
@@ -181,4 +182,6 @@ export function stepUnits(world: World, dt: number, nowSeconds: number): void {
         break;
     }
   }
+  // 걷지 않는 유닛(서 있기·싸우기·일하기)끼리 살짝 밀어낸다: 공격 중 한 점에 겹치지 않게 (11/26 사용자 제보)
+  spreadApart(world, world.units.filter((u) => u.hp > 0 && u.path.length === 0), dt);
 }

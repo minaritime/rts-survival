@@ -5,6 +5,7 @@ import { findPath, findPathNextTo, findPathNextToRect, type Walkable } from '../
 import { nextRandom } from '../random.ts';
 import { buildingAt, findUnit, isWalkable, type World } from '../world.ts';
 import { distanceToBuilding, strike, withinRange } from './combat.ts';
+import { spreadApart } from './spacing.ts';
 
 /**
  * 괴물과 사냥감의 움직임 (기획.md 8-1). 괴물은 내 것만 노린다 (거울 적과는 아직 싸우지 않음, 혼합형에서 정할 것).
@@ -220,42 +221,9 @@ export function stepCreatures(world: World, dt: number, now: number): void {
   spreadMonsters(world, dt);
 }
 
-/** 이보다 가까운 괴물끼리는 서로 밀어낸다 (한 점에 겹쳐 한 마리처럼 보이지 않게) */
-const PERSONAL_SPACE = 0.7;
-const PUSH_PER_SECOND = 1.5;
-
-/** 괴물끼리 살짝 밀어내기. 밀린 자리가 절벽·건물이면 밀지 않는다 */
+/** 괴물끼리 살짝 밀어내기 (spacing.ts) */
 function spreadMonsters(world: World, dt: number): void {
-  const live = world.creatures.filter((c) => c.hp > 0 && isMonster(c));
-  for (let i = 0; i < live.length; i++) {
-    for (let j = i + 1; j < live.length; j++) {
-      const a = live[i]!;
-      const b = live[j]!;
-      let dx = b.x - a.x;
-      let dy = b.y - a.y;
-      let d = Math.hypot(dx, dy);
-      if (d >= PERSONAL_SPACE) continue;
-      if (d < 1e-6) {
-        // 딱 겹쳤으면 id 로 정한 방향으로 (같은 판은 늘 같게)
-        const angle = ((a.id * 7 + b.id * 13) % 360) * (Math.PI / 180);
-        dx = Math.cos(angle);
-        dy = Math.sin(angle);
-        d = 1;
-      }
-      const push = Math.min((PERSONAL_SPACE - Math.min(d, PERSONAL_SPACE)) / 2, PUSH_PER_SECOND * dt);
-      nudge(world, a, (-dx / d) * push, (-dy / d) * push);
-      nudge(world, b, (dx / d) * push, (dy / d) * push);
-    }
-  }
-}
-
-function nudge(world: World, c: Creature, dx: number, dy: number): void {
-  const x = c.x + dx;
-  const y = c.y + dy;
-  if (isWalkable(world, Math.round(x), Math.round(y))) {
-    c.x = x;
-    c.y = y;
-  }
+  spreadApart(world, world.creatures.filter((c) => c.hp > 0 && isMonster(c)), dt);
 }
 
 /** 배급처 칸에서 within 칸 안에 괴물이 있는지 (막힘 판정) */
