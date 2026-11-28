@@ -7,6 +7,7 @@ import type { World } from '../sim/world.ts';
 import { SHEETS, directionIndex, type ImageKey } from './assets.ts';
 import { tileToPx, unitScreenPos } from './coords.ts';
 import { PALETTE } from './palette.ts';
+import { playDeath } from './deathFx.ts';
 
 /** 걷기 그림이 넘어가는 속도 (장/초) */
 const WALK_FPS = 8;
@@ -59,6 +60,10 @@ export function createSpriteLayer(scene: Phaser.Scene, world: World): SpriteLaye
     });
   };
   const creatureSprites = new Map<number, Phaser.GameObjects.Sprite>();
+  /** 물러나던 괴물 (사라져도 죽음 연출을 안 함) */
+  const retreating = new Set<number>();
+  /** 죽음 연출을 시작한 id (세계에 남아 있어도 그림을 다시 만들지 않음) */
+  const fallen = new Set<number>();
 
   /** 이번 프레임의 자원 id → 자원 (유닛마다 world.nodes 를 처음부터 훑지 않게) */
   let nodeById = new Map<number, ResourceNode>();
@@ -136,6 +141,7 @@ export function createSpriteLayer(scene: Phaser.Scene, world: World): SpriteLaye
     const alive = new Set<number>();
     for (const c of world.creatures) {
       alive.add(c.id);
+      if (c.retreating) retreating.add(c.id);
       let sprite = creatureSprites.get(c.id);
       if (!sprite) {
         sprite = scene.add.sprite(0, 0, c.kind);
@@ -151,7 +157,10 @@ export function createSpriteLayer(scene: Phaser.Scene, world: World): SpriteLaye
     }
     for (const [id, sprite] of creatureSprites) {
       if (alive.has(id)) continue;
-      sprite.destroy();
+      // 물러나 지도 밖으로 나간 괴물은 죽은 게 아니라 그냥 사라진다
+      if (retreating.has(id)) sprite.destroy();
+      else playDeath(scene, sprite, id, true);
+      retreating.delete(id);
       creatureSprites.delete(id);
       facing.delete(id);
     }
@@ -161,15 +170,21 @@ export function createSpriteLayer(scene: Phaser.Scene, world: World): SpriteLaye
     const alive = new Set<number>();
     for (const unit of world.units) {
       alive.add(unit.id);
+      if (fallen.has(unit.id)) continue;
+      if (unit.hp <= 0) {
+        // 체력이 다한 순간 쓰러지기 시작 (지휘관처럼 세계에 남는 경우도 있음)
+        const dying = unitSprites.get(unit.id);
+        if (dying) playDeath(scene, dying, unit.id, false);
+        unitSprites.delete(unit.id);
+        facing.delete(unit.id);
+        fallen.add(unit.id);
+        continue;
+      }
       let sprite = unitSprites.get(unit.id);
       if (!sprite) {
         sprite = scene.add.sprite(0, 0, unit.kind);
         if (unit.owner === 'enemy') sprite.setTint(PALETTE.enemyTint);
         unitSprites.set(unit.id, sprite);
-      }
-      if (unit.hp <= 0) {
-        sprite.setVisible(false);
-        continue;
       }
       const { x, y } = unitScreenPos(unit, alpha);
       const cols = SHEETS[unit.kind].frames;
@@ -178,9 +193,10 @@ export function createSpriteLayer(scene: Phaser.Scene, world: World): SpriteLaye
       sprite.setPosition(x, y).setDepth(y).setFrame(faceOf(unit) * cols + step);
     }
     // 세계에서 빠진 유닛의 그림·방향 기억을 지운다
+    for (const id of fallen) if (!alive.has(id)) fallen.delete(id);
     for (const [id, sprite] of unitSprites) {
       if (alive.has(id)) continue;
-      sprite.destroy();
+      playDeath(scene, sprite, id, false);
       unitSprites.delete(id);
       facing.delete(id);
     }
