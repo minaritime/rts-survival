@@ -2,7 +2,7 @@ import { BUILDINGS, FEEDER, type BuildingKind } from '../../data/buildings.ts';
 import { COMMANDER } from '../../data/commander.ts';
 import { UNITS, type UnitKind } from '../../data/units.ts';
 import { CREATURES } from '../../data/monsters.ts';
-import { BUILDING_ATTACK } from '../../data/combat.ts';
+import { ARMOR_NAME, BUILDING_ARMOR, BUILDING_ATTACK, CREATURE_ARMOR, UNIT_ARMOR, type ArmorType } from '../../data/combat.ts';
 import type { Building, Creature, ResourceNode, Unit } from '../../sim/entities.ts';
 import { isSupplyBlocked } from '../../sim/systems/production.ts';
 import { isPassable, type Point } from '../../sim/grid.ts';
@@ -162,14 +162,19 @@ export function describeSelection(world: World, selected: ReadonlySet<number>): 
   const unit = units[0];
   if (unit) {
     const title = unit.owner === 'enemy' ? `적 ${unitName(unit.kind)}` : unitName(unit.kind);
-    return { title, status: describeOrder(world, unit) };
+    return { title: withArmor(title, UNIT_ARMOR[unit.kind]), status: describeOrder(world, unit) };
   }
   const b = buildings[0]!;
   const name = b.owner === 'enemy' ? `적 ${BUILDINGS[b.kind].name}` : BUILDINGS[b.kind].name;
   const state = b.complete
     ? (describeProduction(world, b) ?? buildingRole(b.kind))
     : `짓는 중 ${Math.floor(b.progress * 100)}%`;
-  return { title: name, status: state };
+  return { title: withArmor(name, BUILDING_ARMOR), status: state };
+}
+
+/** 제목 옆 장갑 표시. 예: "소총병 · 경장" */
+function withArmor(title: string, armor: ArmorType): string {
+  return `${title} · ${ARMOR_NAME[armor]}`;
 }
 
 /** 지정한 부대 번호 줄. 예: "부대  1(1)  3(2)". 없으면 빈 글 */
@@ -183,5 +188,5 @@ export function describeGroups(groups: ControlGroups): string {
 export function describeCreature(c: Creature): SelectionText {
   const spec = CREATURES[c.kind];
   const attack = spec.attack ? `\n공격 ${spec.attack.damage}` + (spec.attack.buildingFactor ? `, 건물에 ${spec.attack.buildingFactor}배` : '') : '';
-  return { title: spec.name, status: `${spec.role}${attack}` };
+  return { title: withArmor(spec.name, CREATURE_ARMOR[c.kind]), status: `${spec.role}${attack}` };
 }

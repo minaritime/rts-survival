@@ -1,7 +1,19 @@
 import { BUILDINGS } from '../../data/buildings.ts';
 import { UNITS } from '../../data/units.ts';
 import { START } from '../../data/commander.ts';
-import { AUTO_ACQUIRE_EXTRA, BUILDING_ATTACK, LEASH_EXTRA, RANGE_SLACK, UNIT_ATTACK, type AttackSpec } from '../../data/combat.ts';
+import {
+  AUTO_ACQUIRE_EXTRA,
+  BUILDING_ARMOR,
+  BUILDING_ATTACK,
+  CREATURE_ARMOR,
+  LEASH_EXTRA,
+  RANGE_SLACK,
+  UNIT_ARMOR,
+  UNIT_ATTACK,
+  damageMultiplier,
+  type ArmorType,
+  type AttackSpec,
+} from '../../data/combat.ts';
 import { RAID } from '../../data/enemy.ts';
 import { createNode, goIdle, isMonster, unitTile, type Building, type Creature, type Owner, type Unit } from '../entities.ts';
 import { tileIndex, type Point } from '../grid.ts';
@@ -29,9 +41,16 @@ export function withinRange(spec: AttackSpec, distance: number): boolean {
 /** 공격 한 번: 피해를 주고 화면 효과를 남긴다 */
 export function strike(world: World, from: Point, target: Unit | Building | Creature, spec: AttackSpec, isBuilding: boolean): void {
   const factor = isBuilding ? (spec.buildingFactor ?? 1) : 1;
-  target.hp -= spec.damage * factor;
+  target.hp -= spec.damage * factor * damageMultiplier(spec.type ?? 'normal', armorOf(target));
   const to = 'width' in target ? { x: target.x + (target.width - 1) / 2, y: target.y + (target.height - 1) / 2 } : target;
   world.shots.push({ fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, tick: world.tick, melee: spec.range <= 1 });
+}
+
+/** 맞는 쪽 장갑 */
+export function armorOf(target: Unit | Building | Creature): ArmorType {
+  if ('width' in target) return BUILDING_ARMOR;
+  if ('owner' in target) return UNIT_ARMOR[target.kind];
+  return CREATURE_ARMOR[target.kind];
 }
 
 /** 살아 있는 괴물 (사냥감 빼고) */

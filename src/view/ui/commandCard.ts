@@ -9,7 +9,7 @@ import {
   missingRequirement,
   missingUnitRequirement,
 } from '../../sim/commands.ts';
-import { UNIT_ATTACK } from '../../data/combat.ts';
+import { ARMOR_NAME, UNIT_ARMOR, UNIT_ATTACK } from '../../data/combat.ts';
 import { canBuild, type Building } from '../../sim/entities.ts';
 import type { World } from '../../sim/world.ts';
 import { iconKey } from '../assets.ts';
@@ -124,7 +124,8 @@ function trainButton(kind: TrainableKind, buildings: readonly Building[], world:
   const short = spec.mineral - world.stock.mineral;
   const full = buildings.every((b) => b.trainQueue.length >= PRODUCTION_QUEUE_MAX);
   const missing = missingUnitRequirement(world, kind);
-  const lines = [`미네랄 ${spec.mineral}, 만드는 시간 ${spec.trainSeconds}초, 보급 ${spec.supply}`, UNIT_ROLE[kind]];
+  const lines = [`미네랄 ${spec.mineral}, 만드는 시간 ${spec.trainSeconds}초, 보급 ${spec.supply}`, `${UNIT_ROLE[kind]}
+장갑 ${ARMOR_NAME[UNIT_ARMOR[kind]]}`];
   if (missing) lines.push(`${BUILDINGS[missing].name}가 있어야 뽑을 수 있습니다`);
   else if (full) lines.push(`예약은 ${PRODUCTION_QUEUE_MAX}개까지입니다`);
   else if (short > 0) lines.push(`미네랄이 ${short} 모자랍니다`);

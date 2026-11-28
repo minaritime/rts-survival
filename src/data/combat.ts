@@ -1,15 +1,52 @@
 import type { BuildingKind } from './buildings.ts';
+import type { CreatureKind } from './monsters.ts';
 import type { UnitKind } from './units.ts';
 
-/** 한 번 공격: 피해, 사거리(칸), 다시 쏘기까지(초). buildingFactor 는 건물에 줄 때 배율 */
+/** 공격 유형 (기획.md 5-1): 보통 / 대경장(경장에 +50%) / 대중장(중장에 +50%) */
+export type DamageType = 'normal' | 'antiLight' | 'antiHeavy';
+/** 장갑 (기획.md 5-1): 경장·중장 */
+export type ArmorType = 'light' | 'heavy';
+
+export const ARMOR_NAME: Readonly<Record<ArmorType, string>> = { light: '경장', heavy: '중장' };
+export const DAMAGE_TYPE_NAME: Readonly<Record<DamageType, string>> = { normal: '보통', antiLight: '대경장', antiHeavy: '대중장' };
+
+/** 맞는 장갑과 짝이 맞으면 피해 배율 */
+export const ARMOR_BONUS = 1.5;
+
+export function damageMultiplier(type: DamageType, armor: ArmorType): number {
+  if (type === 'antiLight' && armor === 'light') return ARMOR_BONUS;
+  if (type === 'antiHeavy' && armor === 'heavy') return ARMOR_BONUS;
+  return 1;
+}
+
+/** 한 번 공격: 피해, 사거리(칸), 다시 쏘기까지(초). buildingFactor 는 건물에 줄 때 배율, type 이 없으면 보통 */
 export interface AttackSpec {
   readonly damage: number;
   readonly range: number;
   readonly cooldown: number;
   readonly buildingFactor?: number;
+  readonly type?: DamageType;
 }
 
-/** 내 유닛 공격 (기획.md 3장 지휘관, 5-1 유닛표). 장갑 종류는 시제품에서 빼고 전부 보통 공격 */
+/** 유닛 장갑 (기획.md 5-1 표. 지휘관은 표에 없어 경장) */
+export const UNIT_ARMOR: Readonly<Record<UnitKind, ArmorType>> = {
+  commander: 'light',
+  worker: 'light',
+  rifleman: 'light',
+  assault: 'heavy',
+};
+
+/** 괴물·사냥감 장갑 (기획서에 없어 2026-11-28 임시로 정함: 떼거리 경장, 돌진형 중장) */
+export const CREATURE_ARMOR: Readonly<Record<CreatureKind, ArmorType>> = {
+  swarm: 'light',
+  charger: 'heavy',
+  grazer: 'light',
+};
+
+/** 건물은 모두 중장 (스타처럼) */
+export const BUILDING_ARMOR: ArmorType = 'heavy';
+
+/** 내 유닛 공격 (기획.md 3장 지휘관, 5-1 유닛표). 지금 유닛은 모두 보통 공격 */
 export const UNIT_ATTACK: Readonly<Record<UnitKind, AttackSpec>> = {
   commander: { damage: 10, range: 4, cooldown: 1 },
   worker: { damage: 5, range: 1, cooldown: 1 },

@@ -11,7 +11,7 @@ describe('선택 정보 글', () => {
   test('지휘관 하나: 이름 + 하는 일 (체력은 막대로 따로)', () => {
     const world = newWorld();
     const text = describeSelection(world, new Set([world.commanderId]));
-    expect(text?.title).toBe('지휘관');
+    expect(text?.title).toBe('지휘관 · 경장');
     expect(text?.status).toContain('대기 중');
     expect(text?.status).not.toContain('체력');
   });
@@ -31,7 +31,7 @@ describe('선택 정보 글', () => {
     const cc = commandBuild(world, [world.commanderId], 'commandCenter', { x: 10, y: 20 })!;
     run(world, 5);
     const building = describeSelection(world, new Set([cc.id]));
-    expect(building?.title).toBe('사령부');
+    expect(building?.title).toBe('사령부 · 중장');
     expect(building?.status).toMatch(/짓는 중 \d+%/);
     run(world, 10);
     // 다 지으면 하는 일을 보여 준다
@@ -95,7 +95,7 @@ describe('괴물·사냥감 설명 (5단계)', () => {
     const world = newWorld();
     const grazer = world.creatures.find((c) => c.kind === 'grazer')!;
     const text = describeSelection(world, new Set([grazer.id]));
-    expect(text?.title).toBe('사냥감');
+    expect(text?.title).toBe('사냥감 · 경장');
     expect(text?.status).toContain('초식 동물');
   });
 
