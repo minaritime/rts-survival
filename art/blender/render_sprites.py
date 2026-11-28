@@ -102,6 +102,8 @@ JOBS = {
                                        stretch=True),
     'barracks': lambda out: static(out, 'barracks', models.barracks, frame_tiles=4.0, frame_height=6.0, stretch=True),
     'turret': lambda out: static(out, 'turret', models.turret, frame_tiles=3.0, frame_height=4.0, stretch=True),
+    'infantry_lab': lambda out: static(out, 'infantry_lab', models.infantry_lab, frame_tiles=3.0, frame_height=4.0,
+                                       stretch=True),
     'frame_1': lambda out: static(out, 'frame_1', lambda r: models.construction_frame(r, 1.0), frame_tiles=2.0,
                                   frame_height=3.0, stretch=True),
     'frame_2': lambda out: static(out, 'frame_2', lambda r: models.construction_frame(r, 2.0), frame_tiles=3.0,

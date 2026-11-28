@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { BuildingKind } from '../src/data/buildings.ts';
 import { ENEMY_ATTACK, ENEMY_EXPAND, ENEMY_GROW } from '../src/data/enemy.ts';
 import { UNITS } from '../src/data/units.ts';
 import { MAP3_ENEMY, MAP3_ROWS } from '../src/maps/map3.ts';
 import { homeArmy, readyToAttack } from '../src/sim/ai/enemyArmy.ts';
-import { commandTrain } from '../src/sim/commands.ts';
+import { canPlace, commandTrain } from '../src/sim/commands.ts';
 import { createBuilding, createTrainedUnit } from '../src/sim/entities.ts';
 import { parseMap } from '../src/sim/mapLoader.ts';
 import { addBuilding, createWorld, type World } from '../src/sim/world.ts';
@@ -17,25 +18,53 @@ function addUnits(world: World, kind: 'rifleman' | 'worker', owner: 'player' | '
   for (let i = 0; i < count; i++) world.units.push(createTrainedUnit(world.nextId++, kind, { x: x + (i % 4), y: y + Math.floor(i / 4) }, owner));
 }
 
-describe('돌격병', () => {
-  it('병영에서 75 미네랄로 뽑고, 체력 100', () => {
+/** 다 지은 건물을 바로 세운다 */
+function placeDone(w: World, kind: BuildingKind, x: number, y: number, owner: 'player' | 'enemy' = 'player') {
+  const b = createBuilding(w.nextId++, kind, { x, y }, false, owner);
+  b.complete = true;
+  b.progress = 1;
+  b.hp = b.maxHp;
+  addBuilding(w, b);
+  return b;
+}
+
+describe('돌격병 (보병 연구소가 있어야 뽑힘)', () => {
+  it('연구소 없으면 못 뽑고, 다 지은 연구소가 있으면 병영에서 75 미네랄로 뽑고 체력 100', () => {
     const w = createWorld(parseMap(MAP3_ROWS));
-    const b = createBuilding(w.nextId++, 'barracks', { x: 10, y: 30 });
-    b.complete = true;
-    b.progress = 1;
-    b.hp = b.maxHp;
-    addBuilding(w, b);
-    const cc = createBuilding(w.nextId++, 'commandCenter', { x: 14, y: 26 });
-    cc.complete = true;
-    cc.progress = 1;
-    cc.hp = cc.maxHp;
-    addBuilding(w, cc);
+    const b = placeDone(w, 'barracks', 10, 30);
+    placeDone(w, 'commandCenter', 14, 26);
     w.stock.mineral = 100;
+    expect(commandTrain(w, b.id, 'assault')).toBe(false);
+    expect(w.stock.mineral).toBe(100);
+    placeDone(w, 'infantryLab', 6, 26);
     expect(commandTrain(w, b.id, 'assault')).toBe(true);
     expect(w.stock.mineral).toBe(25);
     run(w, UNITS.assault.trainSeconds + 1);
     const unit = w.units.find((u) => u.kind === 'assault');
     expect(unit?.maxHp).toBe(100);
+  });
+
+  it('적도 연구소를 짓기 전에는 소총병만 뽑는다', () => {
+    const w = enemyWorld();
+    const e = w.enemy!;
+    e.buildIndex = MAP3_ENEMY.buildOrder.length; // 대본은 끝난 것으로 (연구소 안 지음)
+    e.waveSize = 99;
+    e.stock.mineral = 5000;
+    placeDone(w, 'barracks', 50, 10, 'enemy');
+    run(w, 120);
+    expect(w.units.some((u) => u.owner === 'enemy' && u.kind === 'rifleman')).toBe(true);
+    expect(w.units.some((u) => u.owner === 'enemy' && u.kind === 'assault')).toBe(false);
+    placeDone(w, 'infantryLab', 48, 2, 'enemy');
+    run(w, 120);
+    expect(w.units.some((u) => u.owner === 'enemy' && u.kind === 'assault')).toBe(true);
+  });
+
+  it('3맵 적 대본에 5:30 보병 연구소가 있고 그 자리에 지을 수 있다', () => {
+    const step = MAP3_ENEMY.buildOrder.find((s) => s.kind === 'infantryLab');
+    expect(step?.afterSeconds).toBe(330);
+    const w = enemyWorld();
+    for (const s of MAP3_ENEMY.buildOrder.filter((x) => x.kind !== 'infantryLab')) placeDone(w, s.kind, s.at.x, s.at.y, 'enemy');
+    expect(canPlace(w, 'infantryLab', step!.at)).toBe(true);
   });
 });
 

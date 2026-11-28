@@ -17,6 +17,7 @@ export const BUILDING_IMAGE: Readonly<Record<BuildingKind, { done: string; frame
   supplyDepot: { done: 'supply_depot', frame: 'frame_2' },
   barracks: { done: 'barracks', frame: 'frame_3' },
   turret: { done: 'turret', frame: 'frame_2' },
+  infantryLab: { done: 'infantry_lab', frame: 'frame_2' },
 };
 
 export interface Placement {

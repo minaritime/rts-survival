@@ -16,7 +16,7 @@ const PAD = 3;
 /** 그림자(반투명)는 잘라 낼 때 무시: 이보다 불투명해야 "그림" 으로 본다 */
 const ALPHA_MIN = 110;
 
-const BUILDINGS = ['campfire', 'barricade', 'scrap_turret', 'turret', 'command_center', 'supply_depot', 'barracks'];
+const BUILDINGS = ['campfire', 'barricade', 'scrap_turret', 'turret', 'command_center', 'supply_depot', 'barracks', 'infantry_lab'];
 /** 선택 정보 칸 그림용 자원 (11/25 사용자 요청: 고른 것을 그림으로) */
 const NODES = ['mineral_0', 'berry_full', 'debris_0', 'meat'];
 /** 유닛 시트: [이름, 한 장 크기, 한 줄의 장 수] */

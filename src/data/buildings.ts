@@ -8,7 +8,8 @@ export type BuildingKind =
   | 'commandCenter'
   | 'supplyDepot'
   | 'barracks'
-  | 'turret';
+  | 'turret'
+  | 'infantryLab';
 
 export interface BuildingSpec {
   readonly name: string;
@@ -73,6 +74,8 @@ export const BUILDINGS: Readonly<Record<BuildingKind, BuildingSpec>> = {
     trains: ['rifleman', 'assault'],
   },
   turret: { name: '포탑', width: 2, height: 2, mineral: 100, buildSeconds: 25, maxHp: 300, requires: ['commandCenter'] },
+  /** 테크 건물 (기획.md 6장). 다 지어야 병영에서 돌격병이 나온다 (2026-11-28 사용자 확정) */
+  infantryLab: { name: '보병 연구소', width: 2, height: 2, mineral: 125, buildSeconds: 40, maxHp: 600, requires: ['barracks'] },
 };
 
 /** 보급 최대 (스타식) */

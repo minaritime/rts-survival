@@ -1,7 +1,14 @@
 import Phaser from 'phaser';
 import { BUILDINGS, FIRST_COMMAND_CENTER, type BuildingKind } from '../../data/buildings.ts';
 import { UNITS, PRODUCTION_QUEUE_MAX, type TrainableKind } from '../../data/units.ts';
-import { commandCancelTrain, commandStop, commandTrain, isFirstCommandCenter, missingRequirement } from '../../sim/commands.ts';
+import {
+  commandCancelTrain,
+  commandStop,
+  commandTrain,
+  isFirstCommandCenter,
+  missingRequirement,
+  missingUnitRequirement,
+} from '../../sim/commands.ts';
 import { UNIT_ATTACK } from '../../data/combat.ts';
 import { canBuild, type Building } from '../../sim/entities.ts';
 import type { World } from '../../sim/world.ts';
@@ -53,6 +60,7 @@ const BUILD_BUTTONS: readonly { readonly row: number; readonly col: number; read
   { row: 2, col: 2, kind: 'commandCenter' },
   { row: 2, col: 3, kind: 'supplyDepot' },
   { row: 2, col: 4, kind: 'barracks' },
+  { row: 2, col: 1, kind: 'infantryLab' },
 ];
 
 /** 건물이 뽑는 유닛의 버튼 자리 (스타처럼 일꾼 S, 소총병 A, 돌격병 D) */
@@ -115,14 +123,16 @@ function trainButton(kind: TrainableKind, buildings: readonly Building[], world:
   const { row, col } = TRAIN_BUTTONS[kind];
   const short = spec.mineral - world.stock.mineral;
   const full = buildings.every((b) => b.trainQueue.length >= PRODUCTION_QUEUE_MAX);
+  const missing = missingUnitRequirement(world, kind);
   const lines = [`미네랄 ${spec.mineral}, 만드는 시간 ${spec.trainSeconds}초, 보급 ${spec.supply}`, UNIT_ROLE[kind]];
-  if (full) lines.push(`예약은 ${PRODUCTION_QUEUE_MAX}개까지입니다`);
+  if (missing) lines.push(`${BUILDINGS[missing].name}가 있어야 뽑을 수 있습니다`);
+  else if (full) lines.push(`예약은 ${PRODUCTION_QUEUE_MAX}개까지입니다`);
   else if (short > 0) lines.push(`미네랄이 ${short} 모자랍니다`);
   return {
     row,
     col,
     icon: iconKey(kind),
-    enabled: !full && short <= 0,
+    enabled: missing === null && !full && short <= 0,
     tooltip: { title: `${spec.name} (${hotkeyOf(row, col)})`, status: lines.join('\n') },
     // 여러 건물을 골랐으면 줄이 가장 짧은 곳에 (스타처럼 나눠 뽑기)
     run: (ctx) => {

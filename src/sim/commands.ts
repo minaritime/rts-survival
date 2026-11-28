@@ -113,7 +113,15 @@ export function commandStop(world: World, unitIds: readonly number[]): boolean {
 
 /** 짓기 조건 중 아직 없는 건물 (그 편의 다 지은 것만 셈). 다 갖췄으면 null */
 export function missingRequirement(world: World, kind: BuildingKind, owner: Owner = 'player'): BuildingKind | null {
-  const need = BUILDINGS[kind].requires ?? [];
+  return firstMissing(world, BUILDINGS[kind].requires ?? [], owner);
+}
+
+/** 뽑기 조건(테크 건물) 중 아직 없는 건물. 다 갖췄으면 null */
+export function missingUnitRequirement(world: World, kind: TrainableKind, owner: Owner = 'player'): BuildingKind | null {
+  return firstMissing(world, UNITS[kind].requires ?? [], owner);
+}
+
+function firstMissing(world: World, need: readonly BuildingKind[], owner: Owner): BuildingKind | null {
   return need.find((k) => !world.buildings.some((b) => b.kind === k && b.complete && b.owner === owner)) ?? null;
 }
 
@@ -239,6 +247,7 @@ export function commandTrain(world: World, buildingId: number, kind: TrainableKi
   const b = world.buildings.find((x) => x.id === buildingId);
   const cost = UNITS[kind].mineral;
   if (!b || !b.complete || !canTrain(b, kind) || b.trainQueue.length >= PRODUCTION_QUEUE_MAX) return false;
+  if (missingUnitRequirement(world, kind, b.owner) !== null) return false;
   const stock = stockOf(world, b.owner);
   if (stock.mineral < cost) return false;
   stock.mineral -= cost;

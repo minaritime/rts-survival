@@ -1,6 +1,6 @@
 import { ENEMY, ENEMY_ATTACK, POWER } from '../../data/enemy.ts';
 import { isSoldier, UNITS, type TrainableKind } from '../../data/units.ts';
-import { commandAttackMove, commandMove, commandTrain } from '../commands.ts';
+import { commandAttackMove, commandMove, commandTrain, missingUnitRequirement } from '../commands.ts';
 import type { Unit } from '../entities.ts';
 import type { Point } from '../grid.ts';
 import { between, nextRandom } from '../random.ts';
@@ -70,9 +70,10 @@ export function trainSoldiers(world: World, enemy: EnemyState, spare: number): v
   }
 }
 
-/** 돌격병을 섞어 뽑는다. 돌격병 값이 모자라면 소총병 */
+/** 돌격병을 섞어 뽑는다. 보병 연구소가 없거나 돌격병 값이 모자라면 소총병 */
 function pickSoldier(world: World, spare: number): TrainableKind | null {
-  const kind: TrainableKind = nextRandom(world) < ENEMY_ATTACK.assaultChance ? 'assault' : 'rifleman';
+  const wantsAssault = nextRandom(world) < ENEMY_ATTACK.assaultChance;
+  const kind: TrainableKind = wantsAssault && missingUnitRequirement(world, 'assault', 'enemy') === null ? 'assault' : 'rifleman';
   if (spare >= UNITS[kind].mineral) return kind;
   return spare >= UNITS.rifleman.mineral ? 'rifleman' : null;
 }

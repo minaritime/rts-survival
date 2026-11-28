@@ -92,6 +92,8 @@ export const MAP3_ENEMY: EnemyPlan = {
     { kind: 'supplyDepot', at: { x: 35, y: 14 }, afterSeconds: 180 },
     { kind: 'barracks', at: { x: 46, y: 6 }, afterSeconds: 240 },
     { kind: 'turret', at: { x: 43, y: 15 }, afterSeconds: 300 },
+    // 보병 연구소: 다 지으면 돌격병이 섞여 나온다 (5:30, 2026-11-28 사용자 확정)
+    { kind: 'infantryLab', at: { x: 48, y: 2 }, afterSeconds: 330 },
     // 남동 배급처(46,35) 곁
     { kind: 'supplyDepot', at: { x: 48, y: 33 }, afterSeconds: 360 },
     { kind: 'turret', at: { x: 55, y: 20 }, afterSeconds: 420 },

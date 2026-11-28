@@ -429,6 +429,32 @@ def turret(root):
     part('cube', 'ember', loc=(0, -0.335, 0.86), scale=(0.12, 0.01, 0.04), parent=root)
 
 
+def infantry_lab(root):
+    """보병 연구소: 강철 실험동 + 빛나는 유리 돔 + 앞에 세운 중장갑 갑옷 틀 (2x2). 돌격병과 같은 강철·주황 빛"""
+    _pad(root, 2.0)
+    hall = part('cube', 'steel', loc=(0.1, 0.2, 0.36), scale=(0.75, 0.55, 0.3), parent=root)
+    common.bevel(hall, 0.04, 2)
+    part('cube', 'hull', loc=(0.1, 0.2, 0.69), scale=(0.78, 0.58, 0.04), parent=root)
+    part('uv', 'visor', segments=16, ring_count=8, loc=(0.35, 0.3, 0.72), scale=(0.34, 0.34, 0.26), parent=root)
+    part('cyl', 'steel_light', vertices=16, loc=(0.35, 0.3, 0.74), scale=(0.37, 0.37, 0.03), parent=root)
+    # 앞 빛 띠와 문
+    part('cube', 'visor_orange', loc=(0.1, -0.355, 0.55), scale=(0.7, 0.008, 0.02), parent=root)
+    part('cube', 'pad', loc=(0.4, -0.37, 0.24), scale=(0.18, 0.03, 0.18), parent=root)
+    # 갑옷 틀: 기둥 둘 + 가로대 + 몸통판·투구 + 기대 세운 방패
+    for x in (-0.72, -0.28):
+        part('cube', 'gun', loc=(x, -0.6, 0.4), scale=(0.025, 0.025, 0.34), parent=root)
+    part('cube', 'gun', loc=(-0.5, -0.6, 0.74), scale=(0.25, 0.025, 0.025), parent=root)
+    torso = part('cube', 'steel_light', loc=(-0.5, -0.6, 0.5), scale=(0.14, 0.08, 0.16), parent=root)
+    common.bevel(torso, 0.03, 2)
+    part('uv', 'steel', segments=10, ring_count=6, loc=(-0.5, -0.6, 0.72), scale=(0.08, 0.08, 0.07), parent=root)
+    part('cube', 'visor_orange', loc=(-0.5, -0.68, 0.72), scale=(0.05, 0.01, 0.015), parent=root)
+    shield = part('cube', 'steel', loc=(-0.25, -0.75, 0.32), scale=(0.1, 0.02, 0.2), rot=(0, 0.15, 0.3), parent=root)
+    common.bevel(shield, 0.015, 1)
+    # 지붕 환기구
+    for x in (-0.4, -0.1):
+        part('cyl', 'gun', vertices=8, loc=(x, 0.45, 0.78), scale=(0.07, 0.07, 0.06), parent=root)
+
+
 def construction_frame(root, size):
     """짓는 중 (크기 공용): 받침 + 낮은 바닥판 + 네 귀퉁이 비계 기둥과 가로대 + 경고등"""
     _pad(root, size)

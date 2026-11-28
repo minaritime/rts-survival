@@ -26,6 +26,7 @@ const ICON_FILES: Readonly<Record<string, string>> = {
   commandCenter: 'command_center',
   supplyDepot: 'supply_depot',
   barracks: 'barracks',
+  infantryLab: 'infantry_lab',
   worker: 'worker',
   rifleman: 'rifleman',
   assault: 'assault',
@@ -64,6 +65,7 @@ export const IMAGES = [
   'supply_depot',
   'barracks',
   'turret',
+  'infantry_lab',
   // 짓는 중 (크기 공용 비계): 1칸, 2x2, 3x3
   'frame_1',
   'frame_2',
