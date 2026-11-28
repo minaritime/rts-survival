@@ -221,13 +221,13 @@ export function stepCreatures(world: World, dt: number, now: number): void {
   spreadMonsters(world, dt);
 }
 
-/** 괴물끼리 살짝 밀어내기, 그리고 유닛과 부딪히기 (spacing.ts). 물러가는 괴물은 막지 않는다 */
+/** 괴물끼리 살짝 밀어내기, 그리고 유닛과 부딪히기 (spacing.ts). 물러가는 괴물·자원 캐는 일꾼은 빠진다 (11/28 사용자) */
 function spreadMonsters(world: World, dt: number): void {
   const monsters = world.creatures.filter((c) => c.hp > 0 && isMonster(c));
   spreadApart(world, monsters, dt);
   collideUnitsWithMonsters(
     world,
-    world.units.filter((u) => u.hp > 0),
+    world.units.filter((u) => u.hp > 0 && u.order.type !== 'gather'),
     monsters.filter((c) => !c.retreating),
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAP3_ROWS } from '../src/maps/map3.ts';
-import { commandAttack, commandAttackMove, commandMove } from '../src/sim/commands.ts';
+import { commandAttack, commandAttackMove, commandGather, commandMove } from '../src/sim/commands.ts';
 import { createCreature, createTrainedUnit, type Unit } from '../src/sim/entities.ts';
 import { parseMap } from '../src/sim/mapLoader.ts';
 import { createWorld, stepWorld, type World } from '../src/sim/world.ts';
@@ -110,5 +110,21 @@ describe('유닛 겹침 (11/26 사용자 제보)', () => {
     }
     expect(closest).toBeGreaterThan(0.6);
     expect([Math.round(walker.x), Math.round(walker.y)]).toEqual([14, 28]);
+  });
+
+  it('충돌: 자원을 캐는 일꾼은 괴물과 부딪히지 않는다 (11/28 사용자)', () => {
+    const w = createWorld(parseMap(MAP3_ROWS));
+    const node = w.nodes.find((n) => n.kind === 'mineral')!;
+    const worker = createTrainedUnit(w.nextId++, 'worker', { x: 10, y: 28 });
+    worker.hp = 1e6;
+    w.units.push(worker);
+    commandGather(w, [worker.id], node.id);
+    const swarm = createCreature(w.nextId++, 'swarm', { x: worker.x, y: worker.y });
+    swarm.hp = 1e6;
+    w.creatures.push(swarm);
+    stepWorld(w);
+    expect(worker.order.type).toBe('gather');
+    // 밀어냈다면 한 틱에 0.7칸 가까이 벌어진다. 걸음만으로는 0.3칸도 안 된다
+    expect(Math.hypot(swarm.x - worker.x, swarm.y - worker.y)).toBeLessThan(0.3);
   });
 });
