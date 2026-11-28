@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { MAP3_ROWS } from '../src/maps/map3.ts';
-import { commandAttack, commandAttackMove } from '../src/sim/commands.ts';
+import { commandAttack, commandAttackMove, commandMove } from '../src/sim/commands.ts';
 import { createTrainedUnit, type Unit } from '../src/sim/entities.ts';
 import { parseMap } from '../src/sim/mapLoader.ts';
-import { createWorld, type World } from '../src/sim/world.ts';
+import { createWorld, stepWorld, type World } from '../src/sim/world.ts';
 import { run } from './helpers.ts';
 
 /** 열린 땅(3맵 서쪽 가운데)에 병사 n 기를 한 줄로 */
 function squad(w: World, kind: 'rifleman' | 'assault', n: number): Unit[] {
   const out: Unit[] = [];
   for (let i = 0; i < n; i++) {
-    const u = createTrainedUnit(w.nextId++, kind, { x: 8 + i, y: 24 });
+    const u = createTrainedUnit(w.nextId++, kind, { x: 8 + i, y: 28 });
     w.units.push(u);
     out.push(u);
   }
@@ -46,5 +46,31 @@ describe('유닛 겹침 (11/26 사용자 제보)', () => {
       run(w, 15);
       expect(closestPair(units), kind).toBeGreaterThan(0.6);
     }
+  });
+
+  it('충돌: 걷는 유닛은 서 있는 유닛을 밀고 지나가며 겹치지 않는다', () => {
+    const w = createWorld(parseMap(MAP3_ROWS));
+    const stander = createTrainedUnit(w.nextId++, 'rifleman', { x: 10, y: 28 });
+    const walker = createTrainedUnit(w.nextId++, 'rifleman', { x: 6, y: 28 });
+    w.units.push(stander, walker);
+    commandMove(w, [walker.id], { x: 14, y: 28 });
+    let closest = Infinity;
+    for (let t = 0; t < 20 * 8; t++) {
+      stepWorld(w);
+      closest = Math.min(closest, Math.hypot(stander.x - walker.x, stander.y - walker.y));
+    }
+    expect(closest).toBeGreaterThan(0.6);
+    expect([Math.round(walker.x), Math.round(walker.y)]).toEqual([14, 28]);
+  });
+
+  it('충돌: 마주 걷는 두 유닛도 서로 막히지 않고 지나간다', () => {
+    const w = createWorld(parseMap(MAP3_ROWS));
+    const a = createTrainedUnit(w.nextId++, 'rifleman', { x: 6, y: 28 });
+    const b = createTrainedUnit(w.nextId++, 'rifleman', { x: 14, y: 28 });
+    w.units.push(a, b);
+    commandMove(w, [a.id], { x: 14, y: 28 });
+    commandMove(w, [b.id], { x: 6, y: 28 });
+    run(w, 8);
+    expect([Math.round(a.x), Math.round(a.y), Math.round(b.x), Math.round(b.y)]).toEqual([14, 28, 6, 28]);
   });
 });

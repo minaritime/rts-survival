@@ -185,7 +185,7 @@ node scripts/screenshot.mjs [주소] [폴더]   # 개발 서버를 띄운 뒤 �
 - **돌격병** `assault` (`data/units.ts`, `combat.ts`): 75, 20초, 체력 100, 공격 10 사거리 1. 병영 D. 장갑 종류는 아직 없어 체력만 높음. 그림 `models.assault`(강철 중장갑+방패+칼날), `isSoldier(kind)` = 소총병·돌격병
 - **적 머리 나눔**: `ai/enemyAi.ts`(일꾼·건설·확장), `ai/enemyArmy.ts`(힘 셈·생산·공격 판단·노릴 곳·수비), `ai/enemyQuery.ts`(공용 찾기). 규칙과 수치는 기획.md 8-2 의 "2026-11-26 바꾼 방식", `data/enemy.ts` 의 `ENEMY_ATTACK`·`POWER`·`ENEMY_EXPAND`
 - **적은 내 정보를 모른다** (11/26 사용자 확정): 공격 규모 `waveSize` 를 스스로 정하고(시드 난수, 보낼 때마다 증가), 공격대는 본 것(10칸)만 치고 못 봤으면 `scoutPoints`(내 시작 자리 → 확장 자리·배급처)를 차례로 찾아감. 확장 자리 안전 확인도 없음. **내 병력·건물 수를 적 판단에 다시 쓰지 말 것**. 수비(적 건물 12칸 안 내 유닛)만 봄
-- 적은 **일꾼 없이** 시작, 처음 건물은 `EnemyPlan.start`(스테이지마다). 3맵 = 사령부 + 곁 포탑(11/28), 병영·보급고는 `buildOrder`. 미네랄 400 이상이면 병영을 더(`ENEMY_GROW`, 최대 3)
+- 적은 **일꾼 하나로** 시작(11/28, 11/26 에는 없이), 처음 건물은 `EnemyPlan.start`(스테이지마다). 3맵 = 사령부 + 곁 포탑(11/28), 병영·보급고는 `buildOrder`. 미네랄 400 이상이면 병영을 더(`ENEMY_GROW`, 최대 3)
 - 적 상태: `waveSize`·`patienceUntil`·`scoutIndex`·`nextExpandAt`. 처음 값은 `setupEnemy` → `planFirstAttack`
 - 3맵 확장 자리 `MAP3_ENEMY.expansions`: 남동 (57,36) 미네랄 x62 y34~40, 북서 (4,4) 미네랄 x1 y2~8. 나도 쓸 수 있음
 - **판마다 시드가 바뀜** (`GameScene.seedForGame`). 주소 `?seed=숫자` 면 고정. 점검 스크립트는 `&seed=1` 로 고정해 둠
@@ -204,6 +204,12 @@ node scripts/screenshot.mjs [주소] [폴더]   # 개발 서버를 띄운 뒤 �
 - **겹침**: 공격하며 이동도 도착 칸을 나눠 줌(`commands.assignSpots`, 이동과 공용). 걷지 않는(path 빈) 유닛끼리 살짝 밀어냄 — 괴물과 같은 `systems/spacing.ts`. 딱 겹친 둘은 미는 힘이 0이던 버그도 고침(괴물도 같았음). `tests/overlap.test.ts`
 - 밀어내기를 넣자 15분 밸런스 기본 시드 한 판이 15:10 에 짐 → 시드 10개로 재니 넣든 빼든 10/10 버팀 (넣으면 건물을 조금 더 잃음). 테스트는 5판 중 4판 이상으로 바꿈
 - **사망 모션** (`view/deathFx.ts`, 그림 없이 화면 연출): 옆으로 쓰러지며 납작·어둡게 → 흐려져 사라짐, 괴물은 검붉은 바닥 얼룩. 체력이 0이 되는 순간 시작(`spriteLayer` 의 `fallen`). 물러나 나간 괴물은 연출 없이 사라짐. Blender 로 쓰러지는 장을 찍는 것은 하지 않음 (원하면 나중에)
+
+## 유닛 충돌·짓기 취소·적 일꾼 (2026-11-28 사용자 요청)
+- **유닛 충돌** (`spacing.collideUnits`, `stepUnits` 끝): 걷는 유닛이 서 있는 유닛에 부딪히면 서 있는 쪽이 겹친 만큼 바로 비켜남. 걷는 유닛끼리·서 있는 유닛끼리는 살짝만(초당 1.5) 밀어냄 → 좁은 길에서 마주 걸어도 안 막힘. 벽·건물 쪽으로는 안 밀고 그때는 겹쳐 지나감. **미네랄 채집 중(order gather)인 유닛은 빠짐**(스타처럼, 채집 느려짐 방지). 괴물과 유닛 사이 충돌은 없음 (괴물끼리는 `spreadApart`)
+- **짓기 취소**: 짓는 중인 내 건물을 고르면 명령 칸에 취소(B), 미네랄 75% 환불(`BUILD_CANCEL_REFUND`, `commandCancelBuild`). 짓던 유닛은 줄의 다음 건물로. 첫 사령부를 취소하면 다음 사령부가 다시 첫 사령부(혼자 10초)
+- **적은 일꾼 하나로 시작** (`EnemyPlan.workers`, 사용자가 해 보니 포탑만으로는 지휘관 초반 러시가 됨). 사령부 둘레에 서서 다음 생각 때 미네랄로 감
+- 테스트 자리 주의: 3맵 y=23·24 는 x10~11 말고 벽. 열린 땅이 필요하면 y=26~28
 
 ## GitHub 배포 (2026-11-25, 5단계 뒤 사용자 요청으로 앞당김)
 - 저장소 **minaritime/rts-survival (공개)**, 주소 **https://minaritime.github.io/rts-survival/**
