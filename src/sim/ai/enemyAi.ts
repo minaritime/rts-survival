@@ -40,7 +40,9 @@ export function setupEnemy(world: World, plan: EnemyPlan): void {
   // 매판 다르게 (같은 시드면 같은 판)
   planFirstAttack(world, enemy);
   enemy.nextExpandAt = between(world, ENEMY_EXPAND.earliest);
-  // 일꾼은 없이 시작한다 (사령부가 뽑는다)
+  // 처음 일꾼은 첫 사령부 둘레에 (다음 생각 때 manageWorkers 가 미네랄로 보냄)
+  const cc = enemyBuildings(world).find((b) => b.kind === 'commandCenter')!;
+  for (const at of freeTilesAround(world, cc, plan.workers)) world.units.push(createTrainedUnit(world.nextId++, 'worker', at, 'enemy'));
   const guards = freeTilesAround(world, { x: plan.rally.x, y: plan.rally.y, width: 1, height: 1 }, plan.riflemen);
   for (const at of guards) world.units.push(createTrainedUnit(world.nextId++, 'rifleman', at, 'enemy'));
 }

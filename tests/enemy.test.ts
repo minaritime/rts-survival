@@ -21,11 +21,13 @@ function placeMine(world: World, kind: 'commandCenter' | 'barracks', x: number, 
 }
 
 describe('거울 적 기지 (섬멸형)', () => {
-  it('처음 상태: 3맵은 사령부 + 곁 포탑, 일꾼·병력 없음', () => {
+  it('처음 상태: 3맵은 사령부 + 곁 포탑 + 일꾼 하나, 병력 없음', () => {
     const w = newEnemyWorld();
     expect(w.objective).toBe('annihilate');
     expect(w.buildings.filter((b) => b.owner === 'enemy').map((b) => b.kind)).toEqual(['commandCenter', 'turret']);
-    expect(w.units.filter((u) => u.owner === 'enemy')).toHaveLength(0);
+    expect(w.units.filter((u) => u.owner === 'enemy').map((u) => u.kind)).toEqual(['worker']);
+    run(w, 3);
+    expect(w.units.find((u) => u.owner === 'enemy')!.order.type).toBe('gather');
   });
 
   it('처음 포탑이 적 사령부로 다가온 지휘관을 쏜다', () => {
